@@ -31,28 +31,42 @@
   #canvas-half {
     flex: 1 1 50%;
     min-height: 0;
-    background: #000;
+    /* Grey bars = letterbox. Real Mode 2 picture is the white-boxed wide frame. */
+    background: #555;
     border-bottom: 2px solid #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     touch-action: none;
     position: relative;
+    padding: 4px;
   }
-  /* BBC Mode 2: 160×256 logical, each pixel 2:1 (wide) → 640×512 display */
-  #canvas {
-    display: block;
-    width: auto;
-    height: auto;
+  /*
+   * Mode 2: 160×256 logical, each pixel TWICE as wide as tall.
+   * On screen that is a 5:4 frame (same as 640×512), NOT a tall 160:256 square-pixel box.
+   */
+  #art-frame {
+    box-sizing: border-box;
+    width: 100%;
     max-width: 100%;
     max-height: 100%;
-    aspect-ratio: 640 / 512;
+    aspect-ratio: 5 / 4;
+    height: auto;
+    position: relative;
+    outline: 3px solid #fff;
+    background: #000;
+    flex: 0 0 auto;
+  }
+  #canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     touch-action: none;
     background: #000;
-    outline: 1px solid #444;
-    flex-shrink: 0;
   }
   #tools-half {
     flex: 1 1 50%;
@@ -65,12 +79,13 @@
   }
   #brush-row {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     flex-shrink: 0;
-    height: 44px;
+    height: 40px;
   }
   .brush-btn {
     flex: 1;
+    min-width: 0;
     border: 2px solid #444;
     background: #111;
     color: #0ff;
@@ -86,6 +101,8 @@
     display: block;
     border-radius: 50%;
     background: #0ff;
+    max-width: 90%;
+    max-height: 90%;
   }
   .brush-btn.on {
     border-color: #ff0;
@@ -131,7 +148,7 @@
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 10px "Courier New", monospace;
+    font: bold 9px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     padding: 0 1px;
@@ -153,22 +170,35 @@
     border-color: #f0f;
     color: #f0f;
   }
+  .act.cls-btn {
+    border-color: #f66;
+    color: #f66;
+    background: #300;
+  }
+  .act.saved-flash {
+    background: #0a0 !important;
+    border-color: #fff !important;
+    color: #fff !important;
+  }
   #status {
     flex-shrink: 0;
-    height: 18px;
+    min-height: 18px;
     font-size: 10px;
     color: #0ff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  #status.ok { color: #0f0; font-weight: bold; }
   #file-load { display: none; }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="canvas-half">
-    <canvas id="canvas"></canvas>
+    <div id="art-frame">
+      <canvas id="canvas"></canvas>
+    </div>
   </div>
   <div id="tools-half">
     <div id="brush-row"></div>
@@ -180,6 +210,7 @@
       <button type="button" class="act" id="btn-autosave">AUTO</button>
       <button type="button" class="act" id="btn-trans">TRANS</button>
       <button type="button" class="act" id="btn-fill">FILL</button>
+      <button type="button" class="act cls-btn" id="btn-cls">CLS</button>
       <button type="button" class="act" id="btn-undo">UNDO</button>
     </div>
     <div id="status">Paint · pick dither · finger draw</div>
@@ -228,13 +259,13 @@ const PATTERNS = [
 ];
 
 const STRIP = [0, 1, 2, 3, 4, 5, 6, 7];
-const BRUSH_SIZES = [1, 2, 3, 4, 6, 8];
+const BRUSH_SIZES = [1, 2, 3, 4, 6, 8, 11, 14];
 const STORE_KEY = 'paint-simple-v1';
 const AUTOSAVE_MS = 60 * 1000;
 
 let col = 1, pcol = 7, pat = 8, palRow = 7;
 let dT = 1; // transparency on by default (BBC dither gaps skip)
-let dw = 2;
+let dw = 1; // smallest = one Mode 2 fat pixel (easiest to see 2:1)
 let fillMode = false;
 let drawing = false, lx0 = 0, ly0 = 0;
 let autosaveOn = true;
@@ -386,11 +417,25 @@ function writePxIdx(i, c) {
   d[j] = r; d[j + 1] = g; d[j + 2] = b; d[j + 3] = 255;
 }
 
+function canvasIsEmpty() {
+  for (let i = 0; i < paint.length; i++) if (paint[i]) return false;
+  return true;
+}
+
 function blit() {
   for (let i = 0; i < LW * LH; i++) writePxIdx(i, paint[i] & 7);
   bctx.putImageData(imgData, 0, 0);
   ctx.imageSmoothingEnabled = false;
+  // Stretch 160×256 logical → 640×512 display (= each logical pixel 4×2 = 2:1 wide)
   ctx.drawImage(buf, 0, 0, LW, LH, 0, 0, DISP_W, DISP_H);
+  // Display-only guide (not saved): four fat Mode 2 bricks — each should look wider than tall
+  if (canvasIsEmpty()) {
+    const cols = ['#ffffff', '#ff0000', '#ffffff', '#ff0000'];
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = cols[i];
+      ctx.fillRect((2 + i) * PXW, 2 * PXH, PXW, PXH);
+    }
+  }
 }
 
 let blitPending = false;
@@ -419,12 +464,16 @@ function doUndo() {
   setStatus('Undo');
 }
 
-function setStatus(msg) {
+function setStatus(msg, opts) {
+  const hold = (opts && opts.hold) || 1600;
+  const ok = !!(opts && opts.ok);
   statusEl.textContent = msg;
+  statusEl.classList.toggle('ok', ok);
   if (statusTimer) clearTimeout(statusTimer);
   statusTimer = setTimeout(() => {
+    statusEl.classList.remove('ok');
     statusEl.textContent = `Ink ${col} · Pat ${pat} · Brush ${dw} · Trans ${dT ? 'ON' : 'OFF'}${autosaveOn ? ' · AUTO' : ''}`;
-  }, 1600);
+  }, hold);
 }
 
 function pickPat(p, row) {
@@ -439,14 +488,15 @@ function pickPat(p, row) {
 
 function drawPalette() {
   const wrap = document.getElementById('palette-wrap');
-  const pw = Math.max(1, wrap.clientWidth);
-  const ph = Math.max(1, wrap.clientHeight);
+  const pw = Math.max(1, Math.floor(wrap.clientWidth));
+  const ph = Math.max(1, Math.floor(wrap.clientHeight));
   if (palCanvas.width !== pw) palCanvas.width = pw;
   if (palCanvas.height !== ph) palCanvas.height = ph;
 
   const cols = 18, rows = 8;
-  const cellW = pw / cols;
-  const cellH = ph / rows;
+  // Integer cell grid so no leftover black strips between cells on phones
+  const cellW = Math.max(1, (pw / cols) | 0);
+  const cellH = Math.max(1, (ph / rows) | 0);
 
   pal.fillStyle = '#000';
   pal.fillRect(0, 0, pw, ph);
@@ -454,20 +504,21 @@ function drawPalette() {
   for (let j = 0; j < cols; j++) {
     for (let i = 0; i < rows; i++) {
       const sec = STRIP[i];
-      const ox = j * cellW, oy = i * cellH;
-      const cw = Math.ceil(cellW);
-      const ch = Math.ceil(cellH);
+      const ox = j * cellW;
+      const oy = i * cellH;
+      // Last column/row absorbs remainder so the palette edge isn't a black bar
+      const cw = (j === cols - 1) ? (pw - ox) : cellW;
+      const ch = (i === rows - 1) ? (ph - oy) : cellH;
+      // Fill every pixel in the cell (no gaps after dither blocks)
       for (let ty = 0; ty < ch; ty++) {
         for (let tx = 0; tx < cw; tx++) {
-          const lx = (tx * 8 / cellW) | 0;
-          const ly = (ty * 8 / cellH) | 0;
+          const lx = ((tx * 8) / cw) | 0;
+          const ly = ((ty * 8) / ch) | 0;
           const bit = PATTERNS[j][patIdxTile(lx & 3, ly & 3)];
-          let c;
           if (i === 0 && j > 0 && j < 17 && col === 0) {
             pal.fillStyle = bit ? '#000000' : PALETTE[pcol & 7];
           } else {
-            c = bit ? col : sec;
-            pal.fillStyle = PALETTE[c];
+            pal.fillStyle = PALETTE[bit ? col : sec];
           }
           pal.fillRect(ox + tx, oy + ty, 1, 1);
         }
@@ -492,30 +543,24 @@ function toLogical(clientX, clientY) {
   ];
 }
 
-/** Fit 640×512 Mode 2 frame inside the top half — never distort 2:1 pixels. */
+/** Keep #art-frame at Mode 2 5:4 inside the top half (CSS aspect-ratio + max bounds). */
 function layoutCanvasCss() {
   const half = document.getElementById('canvas-half');
+  const frame = document.getElementById('art-frame');
+  if (!half || !frame) return;
   const r = half.getBoundingClientRect();
-  const pad = 2;
-  const availW = Math.max(1, r.width - pad);
-  const availH = Math.max(1, r.height - pad);
-  let w, h;
-  if (availW / availH > DISP_ASPECT) {
-    h = Math.floor(availH);
-    w = Math.floor(h * DISP_ASPECT);
-  } else {
-    w = Math.floor(availW);
-    h = Math.floor(w / DISP_ASPECT);
+  const availW = Math.max(1, r.width - 8);
+  const availH = Math.max(1, r.height - 8);
+  const scale = Math.min(availW / DISP_W, availH / DISP_H);
+  const w = Math.max(8, Math.floor(DISP_W * scale));
+  const h = Math.max(8, Math.floor(w / DISP_ASPECT));
+  frame.style.width = w + 'px';
+  frame.style.height = h + 'px';
+  // Verify: frame must be wider than tall (fat Mode 2 pixels). If not, force it.
+  if (w < h) {
+    frame.style.width = Math.floor(availH * DISP_ASPECT) + 'px';
+    frame.style.height = Math.floor(availH) + 'px';
   }
-  // Even width keeps Mode 2 double-width columns crisp
-  w = Math.max(LW, Math.floor(w / 2) * 2);
-  h = Math.round(w / DISP_ASPECT);
-  if (h > availH) {
-    h = Math.max(LH, Math.floor(availH / 2) * 2);
-    w = Math.round(h * DISP_ASPECT);
-  }
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
 }
 
 // --- pointer / finger paint ---
@@ -573,8 +618,14 @@ canvas.addEventListener('touchcancel', onUp);
 // --- palette pick ---
 function palettePick(clientX, clientY) {
   const r = palCanvas.getBoundingClientRect();
-  const p = Math.max(0, Math.min(17, ((clientX - r.left) / (r.width / 18)) | 0));
-  const row = Math.max(0, Math.min(7, ((clientY - r.top) / (r.height / 8)) | 0));
+  const cellW = Math.max(1, (palCanvas.width / 18) | 0);
+  const cellH = Math.max(1, (palCanvas.height / 8) | 0);
+  const scaleX = palCanvas.width / Math.max(1, r.width);
+  const scaleY = palCanvas.height / Math.max(1, r.height);
+  const x = (clientX - r.left) * scaleX;
+  const y = (clientY - r.top) * scaleY;
+  const p = Math.max(0, Math.min(17, (x / cellW) | 0));
+  const row = Math.max(0, Math.min(7, (y / cellH) | 0));
   pickPat(p, row);
 }
 
@@ -597,7 +648,7 @@ BRUSH_SIZES.forEach(size => {
   b.dataset.size = size;
   const dot = document.createElement('span');
   dot.className = 'dot';
-  const px = Math.max(4, Math.min(22, size * 2.4));
+  const px = Math.max(3, Math.min(28, 2 + size * 1.7));
   dot.style.width = px + 'px';
   dot.style.height = px + 'px';
   b.appendChild(dot);
@@ -641,16 +692,58 @@ function persistQuiet() {
   } catch (_) {}
 }
 
-function savePng() {
-  // PNG is Mode 2 display size 640×512 (2:1 pixels). Logical art stays 160×256.
-  const a = document.createElement('a');
-  a.download = 'paint_mode2_640x512_' + Date.now() + '.png';
-  a.href = paintToPngDataUrl();
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+function flashSaveBtn(label) {
+  const btn = document.getElementById('btn-save');
+  if (!btn) return;
+  const prev = btn.textContent;
+  btn.classList.add('saved-flash');
+  btn.textContent = label || 'SAVED ✓';
+  setTimeout(() => {
+    btn.classList.remove('saved-flash');
+    btn.textContent = prev;
+  }, 2200);
+}
+
+async function savePng() {
+  // Always keep a restore copy in the app
   persistQuiet();
-  setStatus('Saved Mode 2 PNG 640×512 (160×256 logical)');
+  const name = 'paint_mode2_640x512_' + Date.now() + '.png';
+  const dataUrl = paintToPngDataUrl();
+  let shared = false;
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], name, { type: 'image/png' });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Paint Mode 2' });
+      shared = true;
+    }
+  } catch (_) {
+    // share cancelled or unavailable — fall through to download
+  }
+  if (!shared) {
+    const a = document.createElement('a');
+    a.download = name;
+    a.href = dataUrl;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  flashSaveBtn('SAVED ✓');
+  setStatus(
+    shared
+      ? 'SAVED ✓ — shared PNG + kept in app (AUTO restores it)'
+      : 'SAVED ✓ — PNG export + kept in app (AUTO restores it)',
+    { ok: true, hold: 4000 }
+  );
+}
+
+function clearScreen() {
+  if (!confirm('Clear the whole picture?')) return;
+  saveUndo();
+  paint.fill(0);
+  requestBlit();
+  persistQuiet();
+  setStatus('Screen cleared', { ok: true, hold: 2000 });
 }
 
 function loadFromStorage() {
@@ -736,7 +829,7 @@ function syncFillBtn() {
   canvas.style.cursor = fillMode ? 'cell' : 'crosshair';
 }
 
-document.getElementById('btn-save').onclick = savePng;
+document.getElementById('btn-save').onclick = () => { savePng(); };
 document.getElementById('btn-load').onclick = () => fileLoad.click();
 fileLoad.onchange = () => {
   if (fileLoad.files?.[0]) loadPngFile(fileLoad.files[0]);
@@ -744,6 +837,7 @@ fileLoad.onchange = () => {
 };
 document.getElementById('btn-autosave').onclick = () => setAutosave(!autosaveOn);
 document.getElementById('btn-undo').onclick = doUndo;
+document.getElementById('btn-cls').onclick = clearScreen;
 document.getElementById('btn-trans').onclick = () => {
   dT = dT ? 0 : 1;
   syncTransBtn();
@@ -765,6 +859,11 @@ function onResize() {
 
 window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
+window.visualViewport?.addEventListener('resize', onResize);
+const halfEl = document.getElementById('canvas-half');
+if (halfEl && typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => onResize()).observe(halfEl);
+}
 
 // boot
 const restored = loadFromStorage();
@@ -774,12 +873,16 @@ syncTransBtn();
 syncFillBtn();
 setAutosave(autosaveOn);
 onResize();
+setTimeout(onResize, 50);
+setTimeout(onResize, 300);
 setStatus(restored
-  ? 'Restored · Mode 2 160×256 (2:1 pixels)'
-  : 'Mode 2 160×256 · fat 2:1 pixels · pick dither & paint');
+  ? 'Restored · Mode 2 wide 2:1 pixels (5:4 frame)'
+  : 'Grey bars + wide white frame = Mode 2 · red/white bricks should be fat');
 
+// Drop any old service worker cache that could keep the square-pixel UI
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.getRegistrations?.().then(rs => rs.forEach(r => r.unregister()));
+  caches.keys?.().then(keys => keys.forEach(k => caches.delete(k)));
 }
 })();
 </script>

@@ -14,7 +14,7 @@ Open http://localhost:5173 — or on a phone on the same Wi‑Fi, use your Mac�
 ## Layout (phone portrait)
 
 - **Top half:** Mode 2 canvas  
-- **Bottom half:** 6 brush sizes → dither palette → ink strip → SAVE / LOAD / AUTO / TRANS / FILL / UNDO
+- **Bottom half:** 8 brush sizes → dither palette → ink strip → SAVE / LOAD / AUTO / TRANS / FILL / CLS / UNDO
 
 ## Build an APK
 
