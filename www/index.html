@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.json">
+<title>Paint</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    width: 100%;
+    background: #111;
+    color: #0f0;
+    font-family: "Courier New", Courier, monospace;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  #app {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #canvas-half {
+    flex: 1 1 50%;
+    min-height: 0;
+    background: #000;
+    border-bottom: 2px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    position: relative;
+  }
+  /* BBC Mode 2: 160×256 logical, each pixel 2:1 (wide) → 640×512 display */
+  #canvas {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 640 / 512;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    touch-action: none;
+    background: #000;
+    outline: 1px solid #444;
+    flex-shrink: 0;
+  }
+  #tools-half {
+    flex: 1 1 50%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    padding: 6px;
+    gap: 6px;
+  }
+  #brush-row {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    height: 44px;
+  }
+  .brush-btn {
+    flex: 1;
+    border: 2px solid #444;
+    background: #111;
+    color: #0ff;
+    font: bold 12px "Courier New", monospace;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .brush-btn .dot {
+    display: block;
+    border-radius: 50%;
+    background: #0ff;
+  }
+  .brush-btn.on {
+    border-color: #ff0;
+    background: #330;
+  }
+  .brush-btn.on .dot { background: #ff0; }
+  #palette-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 2px solid #fff;
+    position: relative;
+  }
+  #palette {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  #ink-bar {
+    flex-shrink: 0;
+    height: 28px;
+    display: flex;
+    gap: 3px;
+  }
+  .ink {
+    flex: 1;
+    border: 2px solid #333;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ink.on { border-color: #fff; }
+  #action-row {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    height: 48px;
+  }
+  .act {
+    flex: 1;
+    border: 2px solid #0f0;
+    background: #040;
+    color: #0f0;
+    font: bold 10px "Courier New", monospace;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0 1px;
+    min-width: 0;
+  }
+  .act:active { background: #080; }
+  .act.on {
+    background: #330;
+    border-color: #ff0;
+    color: #ff0;
+  }
+  .act.trans-on {
+    background: #143;
+    border-color: #8f8;
+    color: #8f8;
+  }
+  .act.fill-on {
+    background: #204;
+    border-color: #f0f;
+    color: #f0f;
+  }
+  #status {
+    flex-shrink: 0;
+    height: 18px;
+    font-size: 10px;
+    color: #0ff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #file-load { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-half">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div id="tools-half">
+    <div id="brush-row"></div>
+    <div id="palette-wrap"><canvas id="palette"></canvas></div>
+    <div id="ink-bar"></div>
+    <div id="action-row">
+      <button type="button" class="act" id="btn-save">SAVE</button>
+      <button type="button" class="act" id="btn-load">LOAD</button>
+      <button type="button" class="act" id="btn-autosave">AUTO</button>
+      <button type="button" class="act" id="btn-trans">TRANS</button>
+      <button type="button" class="act" id="btn-fill">FILL</button>
+      <button type="button" class="act" id="btn-undo">UNDO</button>
+    </div>
+    <div id="status">Paint · pick dither · finger draw</div>
+  </div>
+</div>
+<input type="file" id="file-load" accept="image/png,image/*">
+
+<script>
+(() => {
+'use strict';
+
+// BBC Mode 2: 160×256 logical pixels · 2:1 pixel aspect (wide) · 640×512 display
+// Same as ART4EVA / ART4WIN — never stretch to square pixels on screen or in PNG
+const LW = 160, LH = 256;
+const PXW = 4, PXH = 2; // each logical pixel → 4×2 device pixels (2:1)
+const DISP_W = LW * PXW, DISP_H = LH * PXH; // 640×512
+const DISP_ASPECT = DISP_W / DISP_H; // 5/4
+
+const PALETTE = [
+  '#000000','#FF0000','#00FF00','#FFFF00',
+  '#0000FF','#FF00FF','#00FFFF','#FFFFFF',
+  '#808080','#C00000','#00C000','#C0C000',
+  '#0000C0','#C000C0','#00C0C0','#C0C0C0'
+];
+
+// BBC dither patterns 0–17 (from ART4EVA)
+const PATTERNS = [
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0],
+  [0,0,0,0,1,0,1,0,0,0,0,0,1,0,1,0],
+  [0,0,0,0,1,0,1,0,0,1,0,0,1,0,1,0],
+  [0,0,0,1,1,0,1,0,0,1,0,0,1,0,1,0],
+  [0,0,0,1,1,0,1,0,0,1,0,1,1,0,1,0],
+  [0,1,0,1,1,0,1,0,0,1,0,1,1,0,1,0],
+  [1,0,1,0,0,1,0,1,1,0,1,0,0,1,0,1],
+  [1,1,1,0,0,1,0,1,1,0,1,0,0,1,0,1],
+  [1,1,1,0,0,1,0,1,1,0,1,1,0,1,0,1],
+  [1,1,1,1,0,1,0,1,1,0,1,1,0,1,0,1],
+  [1,1,1,1,0,1,0,1,1,1,1,1,0,1,0,1],
+  [1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1],
+  [1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+const STRIP = [0, 1, 2, 3, 4, 5, 6, 7];
+const BRUSH_SIZES = [1, 2, 3, 4, 6, 8];
+const STORE_KEY = 'paint-simple-v1';
+const AUTOSAVE_MS = 60 * 1000;
+
+let col = 1, pcol = 7, pat = 8, palRow = 7;
+let dT = 1; // transparency on by default (BBC dither gaps skip)
+let dw = 2;
+let fillMode = false;
+let drawing = false, lx0 = 0, ly0 = 0;
+let autosaveOn = true;
+let autosaveTimer = null;
+let statusTimer = null;
+
+const paint = new Uint8Array(LW * LH);
+const undoSt = [];
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+canvas.width = DISP_W;
+canvas.height = DISP_H;
+
+const buf = document.createElement('canvas');
+buf.width = LW;
+buf.height = LH;
+const bctx = buf.getContext('2d', { alpha: false });
+const imgData = bctx.createImageData(LW, LH);
+
+const palCanvas = document.getElementById('palette');
+const pal = palCanvas.getContext('2d', { alpha: false });
+
+const statusEl = document.getElementById('status');
+const fileLoad = document.getElementById('file-load');
+
+function hexRgb(c) {
+  const h = PALETTE[c] || '#000000';
+  return [
+    parseInt(h.slice(1, 3), 16),
+    parseInt(h.slice(3, 5), 16),
+    parseInt(h.slice(5, 7), 16)
+  ];
+}
+
+function bbcInk(c) {
+  if (c === null || c === undefined) return null;
+  return c & 7;
+}
+
+function patIdx(x, y) {
+  // Match ART4WIN: curPat(lx % 16, 15 - (ly % 16)) tiled from 4×4
+  return (x & 3) + (((15 - y) & 3) << 2);
+}
+
+function patIdxTile(x, y) {
+  return (x & 3) + ((y & 3) << 2);
+}
+
+function blackDitherActive() {
+  return col === 0 && palRow === 0 && pat > 0 && pat < 17;
+}
+
+/** Plot colour at (x,y), or null to leave pixel unchanged (transparency). */
+function plotColAt(x, y) {
+  const bit = PATTERNS[pat][patIdx(x, y)];
+  if (blackDitherActive()) return bit ? 0 : (dT ? null : bbcInk(pcol));
+  if (dT && pat > 0 && pat < 17 && !bit) return null;
+  return bbcInk(bit ? col : pcol);
+}
+
+function canPlot(dc) {
+  if (dc === null || dc === undefined) return false;
+  if (!dT) return true;
+  if (dc === 0 && col === 0) return true;
+  return dc !== 0;
+}
+
+function setPxDraw(x, y) {
+  if (x < 0 || x >= LW || y < 0 || y >= LH) return;
+  const dc = plotColAt(x, y);
+  if (dc === null || !canPlot(dc)) return;
+  paint[y * LW + x] = bbcInk(dc);
+}
+
+function plotAt(px, py) {
+  if (dw <= 1) {
+    setPxDraw(px, py);
+    return;
+  }
+  const ax = px + 0.5;
+  const ay = py + 0.5;
+  const dx = Math.floor(ax - dw / 2);
+  const dy = Math.floor(ay - dw);
+  for (let ly = dy; ly < dy + dw * 2; ly++) {
+    for (let lx = dx; lx < dx + dw; lx++) setPxDraw(lx, ly);
+  }
+}
+
+function strokeLine(x1, y1, x2, y2) {
+  x1 |= 0; y1 |= 0; x2 |= 0; y2 |= 0;
+  let dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
+  const sx = x1 < x2 ? 1 : -1, sy = y1 < y2 ? 1 : -1;
+  let err = dx - dy;
+  while (true) {
+    plotAt(x1, y1);
+    if (x1 === x2 && y1 === y2) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x1 += sx; }
+    if (e2 < dx) { err += dx; y1 += sy; }
+  }
+}
+
+function patternCol(x, y) {
+  const dc = plotColAt(x, y);
+  return dc === null ? pcol : dc;
+}
+
+/** Flood fill with current dither / solid (ART4EVA-style, respects TRANS). */
+function floodFill(sx, sy) {
+  if (sx < 0 || sx >= LW || sy < 0 || sy >= LH) return;
+  const si = sy * LW + sx;
+  const target = paint[si];
+  if (!blackDitherActive()) {
+    if (target === patternCol(sx, sy)) return;
+  } else if (target === 0 && !PATTERNS[pat][patIdx(sx, sy)]) {
+    return;
+  }
+  const stack = [[sx, sy]];
+  const seen = new Uint8Array(LW * LH);
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    if (x < 0 || x >= LW || y < 0 || y >= LH) continue;
+    let xl = x;
+    while (xl > 0 && paint[y * LW + xl - 1] === target) xl--;
+    let xr = x;
+    while (xr < LW - 1 && paint[y * LW + xr + 1] === target) xr++;
+    for (let p = xl; p <= xr; p++) {
+      const i = y * LW + p;
+      if (seen[i] || paint[i] !== target) continue;
+      seen[i] = 1;
+      setPxDraw(p, y);
+      if (y > 0) {
+        const u = (y - 1) * LW + p;
+        if (!seen[u] && paint[u] === target) stack.push([p, y - 1]);
+      }
+      if (y < LH - 1) {
+        const d = (y + 1) * LW + p;
+        if (!seen[d] && paint[d] === target) stack.push([p, y + 1]);
+      }
+    }
+  }
+}
+
+function writePxIdx(i, c) {
+  const [r, g, b] = hexRgb(c);
+  const d = imgData.data;
+  const j = i * 4;
+  d[j] = r; d[j + 1] = g; d[j + 2] = b; d[j + 3] = 255;
+}
+
+function blit() {
+  for (let i = 0; i < LW * LH; i++) writePxIdx(i, paint[i] & 7);
+  bctx.putImageData(imgData, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(buf, 0, 0, LW, LH, 0, 0, DISP_W, DISP_H);
+}
+
+let blitPending = false;
+function requestBlit() {
+  if (blitPending) return;
+  blitPending = true;
+  requestAnimationFrame(() => {
+    blitPending = false;
+    blit();
+  });
+}
+
+function saveUndo() {
+  undoSt.push(new Uint8Array(paint));
+  if (undoSt.length > 30) undoSt.shift();
+}
+
+function doUndo() {
+  if (!undoSt.length) {
+    setStatus('Nothing to undo');
+    return;
+  }
+  paint.set(undoSt.pop());
+  requestBlit();
+  persistQuiet();
+  setStatus('Undo');
+}
+
+function setStatus(msg) {
+  statusEl.textContent = msg;
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => {
+    statusEl.textContent = `Ink ${col} · Pat ${pat} · Brush ${dw} · Trans ${dT ? 'ON' : 'OFF'}${autosaveOn ? ' · AUTO' : ''}`;
+  }, 1600);
+}
+
+function pickPat(p, row) {
+  pat = Math.max(0, Math.min(17, p));
+  palRow = Math.max(0, Math.min(7, row));
+  pcol = STRIP[palRow];
+  drawPalette();
+  setStatus(dT && pat > 0 && pat < 17
+    ? `Dither ${pat} · transparent gaps`
+    : `Pattern ${pat} · paper ${pcol}`);
+}
+
+function drawPalette() {
+  const wrap = document.getElementById('palette-wrap');
+  const pw = Math.max(1, wrap.clientWidth);
+  const ph = Math.max(1, wrap.clientHeight);
+  if (palCanvas.width !== pw) palCanvas.width = pw;
+  if (palCanvas.height !== ph) palCanvas.height = ph;
+
+  const cols = 18, rows = 8;
+  const cellW = pw / cols;
+  const cellH = ph / rows;
+
+  pal.fillStyle = '#000';
+  pal.fillRect(0, 0, pw, ph);
+
+  for (let j = 0; j < cols; j++) {
+    for (let i = 0; i < rows; i++) {
+      const sec = STRIP[i];
+      const ox = j * cellW, oy = i * cellH;
+      const cw = Math.ceil(cellW);
+      const ch = Math.ceil(cellH);
+      for (let ty = 0; ty < ch; ty++) {
+        for (let tx = 0; tx < cw; tx++) {
+          const lx = (tx * 8 / cellW) | 0;
+          const ly = (ty * 8 / cellH) | 0;
+          const bit = PATTERNS[j][patIdxTile(lx & 3, ly & 3)];
+          let c;
+          if (i === 0 && j > 0 && j < 17 && col === 0) {
+            pal.fillStyle = bit ? '#000000' : PALETTE[pcol & 7];
+          } else {
+            c = bit ? col : sec;
+            pal.fillStyle = PALETTE[c];
+          }
+          pal.fillRect(ox + tx, oy + ty, 1, 1);
+        }
+      }
+    }
+  }
+  pal.strokeStyle = '#fff';
+  pal.lineWidth = 2;
+  pal.strokeRect(pat * cellW + 1, palRow * cellH + 1, cellW - 2, cellH - 2);
+}
+
+function toLogical(clientX, clientY) {
+  // Canvas element is always letterboxed to Mode 2 640×512 aspect — map 1:1
+  const r = canvas.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const relX = (clientX - r.left) / r.width;
+  const relY = (clientY - r.top) / r.height;
+  if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
+  return [
+    Math.min(LW - 1, Math.max(0, (relX * LW) | 0)),
+    Math.min(LH - 1, Math.max(0, (relY * LH) | 0))
+  ];
+}
+
+/** Fit 640×512 Mode 2 frame inside the top half — never distort 2:1 pixels. */
+function layoutCanvasCss() {
+  const half = document.getElementById('canvas-half');
+  const r = half.getBoundingClientRect();
+  const pad = 2;
+  const availW = Math.max(1, r.width - pad);
+  const availH = Math.max(1, r.height - pad);
+  let w, h;
+  if (availW / availH > DISP_ASPECT) {
+    h = Math.floor(availH);
+    w = Math.floor(h * DISP_ASPECT);
+  } else {
+    w = Math.floor(availW);
+    h = Math.floor(w / DISP_ASPECT);
+  }
+  // Even width keeps Mode 2 double-width columns crisp
+  w = Math.max(LW, Math.floor(w / 2) * 2);
+  h = Math.round(w / DISP_ASPECT);
+  if (h > availH) {
+    h = Math.max(LH, Math.floor(availH / 2) * 2);
+    w = Math.round(h * DISP_ASPECT);
+  }
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+}
+
+// --- pointer / finger paint ---
+function onDown(e) {
+  e.preventDefault();
+  const pt = e.touches ? e.touches[0] : e;
+  const logical = toLogical(pt.clientX, pt.clientY);
+  if (!logical) return;
+  const [lx, ly] = logical;
+  if (fillMode) {
+    saveUndo();
+    floodFill(lx, ly);
+    requestBlit();
+    persistQuiet();
+    setStatus(`Filled with pat ${pat} · ink ${col}`);
+    return;
+  }
+  drawing = true;
+  lx0 = lx; ly0 = ly;
+  saveUndo();
+  plotAt(lx, ly);
+  requestBlit();
+  try { canvas.setPointerCapture?.(e.pointerId); } catch (_) {}
+}
+
+function onMove(e) {
+  if (!drawing || fillMode) return;
+  e.preventDefault();
+  const pt = e.touches ? e.touches[0] : e;
+  const logical = toLogical(pt.clientX, pt.clientY);
+  if (!logical) return;
+  const [lx, ly] = logical;
+  strokeLine(lx0, ly0, lx, ly);
+  lx0 = lx; ly0 = ly;
+  requestBlit();
+}
+
+function onUp(e) {
+  if (!drawing) return;
+  drawing = false;
+  persistQuiet();
+  try { canvas.releasePointerCapture?.(e.pointerId); } catch (_) {}
+}
+
+canvas.addEventListener('pointerdown', onDown);
+canvas.addEventListener('pointermove', onMove);
+canvas.addEventListener('pointerup', onUp);
+canvas.addEventListener('pointercancel', onUp);
+// iOS Safari fallback
+canvas.addEventListener('touchstart', onDown, { passive: false });
+canvas.addEventListener('touchmove', onMove, { passive: false });
+canvas.addEventListener('touchend', onUp);
+canvas.addEventListener('touchcancel', onUp);
+
+// --- palette pick ---
+function palettePick(clientX, clientY) {
+  const r = palCanvas.getBoundingClientRect();
+  const p = Math.max(0, Math.min(17, ((clientX - r.left) / (r.width / 18)) | 0));
+  const row = Math.max(0, Math.min(7, ((clientY - r.top) / (r.height / 8)) | 0));
+  pickPat(p, row);
+}
+
+palCanvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  palettePick(e.clientX, e.clientY);
+});
+palCanvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  palettePick(t.clientX, t.clientY);
+}, { passive: false });
+
+// --- UI: brushes ---
+const brushRow = document.getElementById('brush-row');
+BRUSH_SIZES.forEach(size => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'brush-btn' + (size === dw ? ' on' : '');
+  b.dataset.size = size;
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  const px = Math.max(4, Math.min(22, size * 2.4));
+  dot.style.width = px + 'px';
+  dot.style.height = px + 'px';
+  b.appendChild(dot);
+  b.addEventListener('click', () => {
+    dw = size;
+    document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x.dataset.size === dw));
+    setStatus(`Brush ${dw}`);
+  });
+  brushRow.appendChild(b);
+});
+
+// --- UI: solid ink strip ---
+const inkBar = document.getElementById('ink-bar');
+STRIP.forEach(ci => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'ink' + (col === ci ? ' on' : '');
+  b.style.background = PALETTE[ci];
+  b.addEventListener('click', () => {
+    col = ci;
+    document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === col));
+    drawPalette();
+    setStatus(`Ink ${col}`);
+  });
+  inkBar.appendChild(b);
+});
+
+// --- save / load / autosave / undo / trans ---
+function paintToPngDataUrl() {
+  blit();
+  return canvas.toDataURL('image/png');
+}
+
+function persistQuiet() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      paint: Array.from(paint),
+      col, pcol, pat, palRow, dT, dw, autosaveOn,
+      t: Date.now()
+    }));
+  } catch (_) {}
+}
+
+function savePng() {
+  // PNG is Mode 2 display size 640×512 (2:1 pixels). Logical art stays 160×256.
+  const a = document.createElement('a');
+  a.download = 'paint_mode2_640x512_' + Date.now() + '.png';
+  a.href = paintToPngDataUrl();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  persistQuiet();
+  setStatus('Saved Mode 2 PNG 640×512 (160×256 logical)');
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s.paint || s.paint.length !== LW * LH) return false;
+    paint.set(Uint8Array.from(s.paint));
+    if (s.col !== undefined) col = s.col;
+    if (s.pcol !== undefined) pcol = s.pcol;
+    if (s.pat !== undefined) pat = s.pat;
+    if (s.palRow !== undefined) palRow = s.palRow;
+    if (s.dT !== undefined) dT = s.dT;
+    if (s.dw !== undefined) dw = s.dw;
+    if (s.autosaveOn !== undefined) autosaveOn = !!s.autosaveOn;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function nearestBbc8(r, g, b) {
+  let best = 0, bd = 1e9;
+  for (let c = 0; c < 8; c++) {
+    const [pr, pg, pb] = hexRgb(c);
+    const dist = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+    if (dist < bd) { bd = dist; best = c; }
+  }
+  return best;
+}
+
+function loadPngFile(file) {
+  const im = new Image();
+  im.onload = () => {
+    saveUndo();
+    const t = document.createElement('canvas');
+    t.width = im.naturalWidth;
+    t.height = im.naturalHeight;
+    const tc = t.getContext('2d');
+    tc.drawImage(im, 0, 0);
+    const id = tc.getImageData(0, 0, t.width, t.height);
+    for (let ly = 0; ly < LH; ly++) {
+      for (let lx = 0; lx < LW; lx++) {
+        const sx = Math.min(t.width - 1, ((lx + 0.5) * t.width / LW) | 0);
+        const sy = Math.min(t.height - 1, ((ly + 0.5) * t.height / LH) | 0);
+        const i = (sy * t.width + sx) * 4;
+        paint[ly * LW + lx] = nearestBbc8(id.data[i], id.data[i + 1], id.data[i + 2]);
+      }
+    }
+    requestBlit();
+    persistQuiet();
+    setStatus('Loaded image');
+    URL.revokeObjectURL(im.src);
+  };
+  im.src = URL.createObjectURL(file);
+}
+
+function setAutosave(on) {
+  autosaveOn = on;
+  const btn = document.getElementById('btn-autosave');
+  btn.classList.toggle('on', autosaveOn);
+  if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+  if (autosaveOn) {
+    autosaveTimer = setInterval(() => {
+      persistQuiet();
+      setStatus('Autosaved');
+    }, AUTOSAVE_MS);
+  }
+  persistQuiet();
+  setStatus(autosaveOn ? 'Autosave every 1 min' : 'Autosave off');
+}
+
+function syncTransBtn() {
+  const btn = document.getElementById('btn-trans');
+  btn.classList.toggle('trans-on', !!dT);
+  btn.textContent = dT ? 'TRANS' : 'SOLID';
+}
+
+function syncFillBtn() {
+  const btn = document.getElementById('btn-fill');
+  btn.classList.toggle('fill-on', fillMode);
+  canvas.style.cursor = fillMode ? 'cell' : 'crosshair';
+}
+
+document.getElementById('btn-save').onclick = savePng;
+document.getElementById('btn-load').onclick = () => fileLoad.click();
+fileLoad.onchange = () => {
+  if (fileLoad.files?.[0]) loadPngFile(fileLoad.files[0]);
+  fileLoad.value = '';
+};
+document.getElementById('btn-autosave').onclick = () => setAutosave(!autosaveOn);
+document.getElementById('btn-undo').onclick = doUndo;
+document.getElementById('btn-trans').onclick = () => {
+  dT = dT ? 0 : 1;
+  syncTransBtn();
+  setStatus(dT ? 'Transparency ON — dither gaps keep canvas' : 'Transparency OFF — solid dither fill');
+};
+document.getElementById('btn-fill').onclick = () => {
+  fillMode = !fillMode;
+  syncFillBtn();
+  setStatus(fillMode
+    ? 'FILL on — tap area to flood with current dither/solid'
+    : 'FILL off — finger paint');
+};
+
+function onResize() {
+  layoutCanvasCss();
+  drawPalette();
+  blit();
+}
+
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
+
+// boot
+const restored = loadFromStorage();
+document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x.dataset.size === dw));
+document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === col));
+syncTransBtn();
+syncFillBtn();
+setAutosave(autosaveOn);
+onResize();
+setStatus(restored
+  ? 'Restored · Mode 2 160×256 (2:1 pixels)'
+  : 'Mode 2 160×256 · fat 2:1 pixels · pick dither & paint');
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+})();
+</script>
+</body>
+</html>
