@@ -704,11 +704,95 @@ function flashSaveBtn(label) {
   }, 2200);
 }
 
+function isNativeApp() {
+  try {
+    return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
+      && window.Capacitor.isNativePlatform());
+  } catch (_) {
+    return false;
+  }
+}
+
+function capPlugin(name) {
+  return window.Capacitor?.Plugins?.[name] || null;
+}
+
+/** Phone/APK save: write PNG to device storage, then open Android share sheet. */
+async function savePngNative(name, dataUrl) {
+  const Filesystem = capPlugin('Filesystem');
+  const Share = capPlugin('Share');
+  if (!Filesystem) throw new Error('Filesystem plugin missing — reinstall the app');
+
+  const base64 = dataUrl.split(',')[1];
+  if (!base64) throw new Error('Could not encode PNG');
+
+  try {
+    if (typeof Filesystem.requestPermissions === 'function') {
+      await Filesystem.requestPermissions();
+    }
+  } catch (_) {}
+
+  // Capacitor Directory string values
+  const dirs = ['DOCUMENTS', 'CACHE', 'DATA'];
+  const relPath = 'Paint/' + name;
+  let uri = null;
+
+  for (const directory of dirs) {
+    try {
+      const written = await Filesystem.writeFile({
+        path: relPath,
+        data: base64,
+        directory,
+        recursive: true
+      });
+      uri = written.uri;
+      try {
+        const got = await Filesystem.getUri({ path: relPath, directory });
+        if (got?.uri) uri = got.uri;
+      } catch (_) {}
+      break;
+    } catch (_) {}
+  }
+  if (!uri) throw new Error('Could not write PNG to phone storage');
+
+  if (Share) {
+    await Share.share({
+      title: 'Paint Mode 2',
+      text: 'Save or share your painting',
+      url: uri,
+      dialogTitle: 'Save painting to Photos / Files'
+    });
+    return { uri, shared: true };
+  }
+  return { uri, shared: false };
+}
+
 async function savePng() {
   // Always keep a restore copy in the app
   persistQuiet();
   const name = 'paint_mode2_640x512_' + Date.now() + '.png';
   const dataUrl = paintToPngDataUrl();
+
+  // Android APK: browser <a download> does nothing — use Filesystem + Share
+  if (isNativeApp()) {
+    try {
+      setStatus('Saving PNG to phone…');
+      const result = await savePngNative(name, dataUrl);
+      flashSaveBtn('SAVED ✓');
+      setStatus(
+        result.shared
+          ? 'SAVED ✓ — use the share sheet: Photos / Files / Drive'
+          : 'SAVED ✓ — PNG written to phone Documents/Paint',
+        { ok: true, hold: 5000 }
+      );
+      return;
+    } catch (err) {
+      flashSaveBtn('FAIL');
+      setStatus('Save failed: ' + (err?.message || err), { hold: 5000 });
+      return;
+    }
+  }
+
   let shared = false;
   try {
     const blob = await (await fetch(dataUrl)).blob();
@@ -717,9 +801,7 @@ async function savePng() {
       await navigator.share({ files: [file], title: 'Paint Mode 2' });
       shared = true;
     }
-  } catch (_) {
-    // share cancelled or unavailable — fall through to download
-  }
+  } catch (_) {}
   if (!shared) {
     const a = document.createElement('a');
     a.download = name;
@@ -731,8 +813,8 @@ async function savePng() {
   flashSaveBtn('SAVED ✓');
   setStatus(
     shared
-      ? 'SAVED ✓ — shared PNG + kept in app (AUTO restores it)'
-      : 'SAVED ✓ — PNG export + kept in app (AUTO restores it)',
+      ? 'SAVED ✓ — shared PNG + kept in app'
+      : 'SAVED ✓ — PNG download + kept in app',
     { ok: true, hold: 4000 }
   );
 }
