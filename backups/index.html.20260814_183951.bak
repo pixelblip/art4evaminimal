@@ -148,10 +148,10 @@
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 8px "Courier New", monospace;
+    font: bold 9px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    padding: 0;
+    padding: 0 1px;
     min-width: 0;
   }
   .act:active { background: #080; }
@@ -207,7 +207,6 @@
     <div id="action-row">
       <button type="button" class="act" id="btn-save">SAVE</button>
       <button type="button" class="act" id="btn-load">LOAD</button>
-      <button type="button" class="act" id="btn-email">EMAIL</button>
       <button type="button" class="act" id="btn-autosave">AUTO</button>
       <button type="button" class="act" id="btn-trans">TRANS</button>
       <button type="button" class="act" id="btn-fill">FILL</button>
@@ -693,22 +692,16 @@ function persistQuiet() {
   } catch (_) {}
 }
 
-const EMAIL_TO = 'blippyxpixel@gmail.com';
-
-function flashBtn(id, label, ms) {
-  const btn = document.getElementById(id);
+function flashSaveBtn(label) {
+  const btn = document.getElementById('btn-save');
   if (!btn) return;
   const prev = btn.textContent;
   btn.classList.add('saved-flash');
-  btn.textContent = label || 'OK';
+  btn.textContent = label || 'SAVED ✓';
   setTimeout(() => {
     btn.classList.remove('saved-flash');
     btn.textContent = prev;
-  }, ms || 900);
-}
-
-function flashSaveBtn(label, ms) {
-  flashBtn('btn-save', label || 'SAVED ✓', ms || 900);
+  }, 2200);
 }
 
 function isNativeApp() {
@@ -724,15 +717,10 @@ function capPlugin(name) {
   return window.Capacitor?.Plugins?.[name] || null;
 }
 
-function makePaintFilename() {
-  const d = new Date();
-  const p = n => String(n).padStart(2, '0');
-  return `paint_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
-}
-
-/** Silent write PNG to phone Documents/Paint — no popups. */
-async function writePngToPhone(name, dataUrl) {
+/** Phone/APK save: write PNG to device storage, then open Android share sheet. */
+async function savePngNative(name, dataUrl) {
   const Filesystem = capPlugin('Filesystem');
+  const Share = capPlugin('Share');
   if (!Filesystem) throw new Error('Filesystem plugin missing — reinstall the app');
 
   const base64 = dataUrl.split(',')[1];
@@ -744,118 +732,91 @@ async function writePngToPhone(name, dataUrl) {
     }
   } catch (_) {}
 
+  // Capacitor Directory string values
   const dirs = ['DOCUMENTS', 'CACHE', 'DATA'];
   const relPath = 'Paint/' + name;
   let uri = null;
-  let directory = null;
 
-  for (const dir of dirs) {
+  for (const directory of dirs) {
     try {
       const written = await Filesystem.writeFile({
         path: relPath,
         data: base64,
-        directory: dir,
+        directory,
         recursive: true
       });
       uri = written.uri;
-      directory = dir;
       try {
-        const got = await Filesystem.getUri({ path: relPath, directory: dir });
+        const got = await Filesystem.getUri({ path: relPath, directory });
         if (got?.uri) uri = got.uri;
       } catch (_) {}
       break;
     } catch (_) {}
   }
   if (!uri) throw new Error('Could not write PNG to phone storage');
-  return { uri, path: relPath, directory, name };
+
+  if (Share) {
+    await Share.share({
+      title: 'Paint Mode 2',
+      text: 'Save or share your painting',
+      url: uri,
+      dialogTitle: 'Save painting to Photos / Files'
+    });
+    return { uri, shared: true };
+  }
+  return { uri, shared: false };
 }
 
 async function savePng() {
+  // Always keep a restore copy in the app
   persistQuiet();
-  const name = makePaintFilename();
+  const name = 'paint_mode2_640x512_' + Date.now() + '.png';
   const dataUrl = paintToPngDataUrl();
 
+  // Android APK: browser <a download> does nothing — use Filesystem + Share
   if (isNativeApp()) {
     try {
-      await writePngToPhone(name, dataUrl);
-      flashSaveBtn('SAVED ✓', 800);
-      setStatus('Saved ' + name + ' → Documents/Paint', { ok: true, hold: 2200 });
-    } catch (err) {
-      flashSaveBtn('FAIL', 1200);
-      setStatus('Save failed: ' + (err?.message || err), { hold: 4000 });
-    }
-    return;
-  }
-
-  // Desktop browser: instant download, no share sheet
-  const a = document.createElement('a');
-  a.download = name;
-  a.href = dataUrl;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  flashSaveBtn('SAVED ✓', 800);
-  setStatus('Saved ' + name, { ok: true, hold: 2200 });
-}
-
-function uriToAbsolutePath(uri) {
-  if (!uri) return null;
-  let p = String(uri);
-  if (p.startsWith('file://')) p = decodeURIComponent(p.slice(7));
-  // Android content URIs can't be used as absolute paths
-  if (p.startsWith('content:')) return null;
-  return p.replace(/^\/+/, '') || null;
-}
-
-async function emailPng() {
-  persistQuiet();
-  const name = makePaintFilename();
-  const dataUrl = paintToPngDataUrl();
-  const base64 = dataUrl.split(',')[1];
-  if (!base64) {
-    setStatus('Email failed: could not encode PNG', { hold: 4000 });
-    return;
-  }
-
-  const EmailComposer = capPlugin('EmailComposer');
-  if (isNativeApp() && EmailComposer) {
-    try {
-      // Prefer file-path attachment (avoids Android binder size limits on big PNGs)
-      let attachment = { type: 'base64', path: base64, name };
-      try {
-        const written = await writePngToPhone(name, dataUrl);
-        const abs = uriToAbsolutePath(written.uri);
-        if (abs) attachment = { type: 'absolute', path: abs };
-      } catch (_) {}
-
-      await EmailComposer.open({
-        to: [EMAIL_TO],
-        subject: 'Paint Mode 2 — ' + name,
-        body: 'Mode 2 painting attached (' + name + ').',
-        attachments: [attachment]
-      });
-      flashBtn('btn-email', 'MAIL ✓', 1000);
-      setStatus('Email draft → ' + EMAIL_TO + ' · ' + name, { ok: true, hold: 3500 });
+      setStatus('Saving PNG to phone…');
+      const result = await savePngNative(name, dataUrl);
+      flashSaveBtn('SAVED ✓');
+      setStatus(
+        result.shared
+          ? 'SAVED ✓ — use the share sheet: Photos / Files / Drive'
+          : 'SAVED ✓ — PNG written to phone Documents/Paint',
+        { ok: true, hold: 5000 }
+      );
       return;
     } catch (err) {
-      setStatus('Email failed: ' + (err?.message || err), { hold: 4500 });
+      flashSaveBtn('FAIL');
+      setStatus('Save failed: ' + (err?.message || err), { hold: 5000 });
       return;
     }
   }
 
-  // Browser fallback: download file + open mailto (attachments need a mail app)
-  const a = document.createElement('a');
-  a.download = name;
-  a.href = dataUrl;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  const mailto = 'mailto:' + encodeURIComponent(EMAIL_TO)
-    + '?subject=' + encodeURIComponent('Paint Mode 2 — ' + name)
-    + '&body=' + encodeURIComponent('Attach the downloaded file: ' + name);
-  window.location.href = mailto;
-  flashBtn('btn-email', 'MAIL', 1000);
-  setStatus('Downloaded ' + name + ' · opening mail to ' + EMAIL_TO, { ok: true, hold: 3500 });
+  let shared = false;
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], name, { type: 'image/png' });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Paint Mode 2' });
+      shared = true;
+    }
+  } catch (_) {}
+  if (!shared) {
+    const a = document.createElement('a');
+    a.download = name;
+    a.href = dataUrl;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  flashSaveBtn('SAVED ✓');
+  setStatus(
+    shared
+      ? 'SAVED ✓ — shared PNG + kept in app'
+      : 'SAVED ✓ — PNG download + kept in app',
+    { ok: true, hold: 4000 }
+  );
 }
 
 function clearScreen() {
@@ -952,7 +913,6 @@ function syncFillBtn() {
 
 document.getElementById('btn-save').onclick = () => { savePng(); };
 document.getElementById('btn-load').onclick = () => fileLoad.click();
-document.getElementById('btn-email').onclick = () => { emailPng(); };
 fileLoad.onchange = () => {
   if (fileLoad.files?.[0]) loadPngFile(fileLoad.files[0]);
   fileLoad.value = '';

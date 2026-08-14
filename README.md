@@ -14,7 +14,10 @@ Open http://localhost:5173 — or on a phone on the same Wi‑Fi, use your Mac�
 ## Layout (phone portrait)
 
 - **Top half:** Mode 2 canvas  
-- **Bottom half:** 8 brush sizes → dither palette → ink strip → SAVE / LOAD / AUTO / TRANS / FILL / CLS / UNDO
+- **Bottom half:** brushes → dither palette → ink → SAVE / LOAD / EMAIL / AUTO / TRANS / FILL / CLS / UNDO
+
+**SAVE** writes a timestamped PNG to `Documents/Paint` with no popups.  
+**EMAIL** saves a copy and opens a mail draft to `blippyxpixel@gmail.com` with the PNG attached.
 
 ## Build an APK
 
