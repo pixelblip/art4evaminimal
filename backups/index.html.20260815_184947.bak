@@ -139,7 +139,7 @@
   .ink.on { border-color: #fff; }
   #action-row {
     display: flex;
-    gap: 2px;
+    gap: 4px;
     flex-shrink: 0;
     height: 48px;
   }
@@ -148,7 +148,7 @@
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 7px "Courier New", monospace;
+    font: bold 8px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     padding: 0;
@@ -206,8 +206,6 @@
     <div id="ink-bar"></div>
     <div id="action-row">
       <button type="button" class="act" id="btn-save">SAVE</button>
-      <button type="button" class="act" id="btn-fin">FIN</button>
-      <button type="button" class="act" id="btn-play">PLAY</button>
       <button type="button" class="act" id="btn-load">LOAD</button>
       <button type="button" class="act" id="btn-email">EMAIL</button>
       <button type="button" class="act" id="btn-autosave">AUTO</button>
@@ -220,7 +218,6 @@
   </div>
 </div>
 <input type="file" id="file-load" accept="image/png,image/*">
-<input type="file" id="file-fin" accept=".json,.paint.json,application/json">
 
 <script>
 (() => {
@@ -265,7 +262,6 @@ const PATTERNS = [
 const STRIP = [0, 1, 2, 3, 4, 5, 6, 7];
 const BRUSH_SIZES = [1, 2, 3, 4, 6, 8, 11, 14];
 const STORE_KEY = 'paint-simple-v1';
-const FIN_KEY = 'paint-last-fin-v1';
 const AUTOSAVE_MS = 60 * 1000;
 
 let col = 1, pcol = 7, pat = 8, palRow = 7;
@@ -276,9 +272,6 @@ let drawing = false, lx0 = 0, ly0 = 0;
 let autosaveOn = true;
 let autosaveTimer = null;
 let statusTimer = null;
-let playingBack = false;
-let strokeHistory = []; // recorded actions for SAVEFIN / PLAY
-let currentStroke = null;
 
 const paint = new Uint8Array(LW * LH);
 const undoSt = [];
@@ -299,15 +292,6 @@ const pal = palCanvas.getContext('2d', { alpha: false });
 
 const statusEl = document.getElementById('status');
 const fileLoad = document.getElementById('file-load');
-const fileFin = document.getElementById('file-fin');
-
-/** Black row: left = densest, right = least density (column j → pattern 17−j). */
-function blackColToPat(colJ) {
-  return 17 - colJ;
-}
-function blackPatToCol(p) {
-  return 17 - p;
-}
 
 function hexRgb(c) {
   const h = PALETTE[c] || '#000000';
@@ -340,9 +324,9 @@ function patternBitCount(j) {
   return n;
 }
 
-/** Greyscale swatch for black-density pattern p (light → black by density). */
-function blackShadeHex(p) {
-  const t = patternBitCount(p) / 16;
+/** Greyscale swatch for black-density column j (light → black). Canvas still paints black pixels only. */
+function blackShadeHex(j) {
+  const t = patternBitCount(j) / 16;
   const v = Math.round(220 * (1 - t));
   const h = v.toString(16).padStart(2, '0');
   return '#' + h + h + h;
@@ -353,10 +337,10 @@ function syncInkStrip() {
     const ci = STRIP[j];
     x.classList.toggle('on', ci === col);
     if (ci === 0) {
-      // Dark→light ramp matches reversed black row (dense left, sparse right)
+      // Show selected black density as a solid grey, or a light→black ramp when not on black row
       x.style.background = (palRow === 0)
         ? blackShadeHex(pat)
-        : 'linear-gradient(90deg, #000000 0%, #808080 55%, #E0E0E0 100%)';
+        : 'linear-gradient(90deg, #E0E0E0 0%, #808080 45%, #000000 100%)';
     } else {
       x.style.background = PALETTE[ci];
     }
@@ -503,14 +487,11 @@ function saveUndo() {
 }
 
 function doUndo() {
-  if (playingBack) return;
   if (!undoSt.length) {
     setStatus('Nothing to undo');
     return;
   }
   paint.set(undoSt.pop());
-  if (currentStroke) currentStroke = null;
-  else if (strokeHistory.length) strokeHistory.pop();
   requestBlit();
   persistQuiet();
   setStatus('Undo');
@@ -575,8 +556,9 @@ function drawPalette() {
       const ch = (i === rows - 1) ? (ph - oy) : cellH;
 
       if (i === 0) {
-        // Black row reversed: left densest (black), right least density (light grey)
-        pal.fillStyle = blackShadeHex(blackColToPat(j));
+        // Black row: solid grey→black by density (same pattern index as colour rows).
+        // Canvas still paints Mode 2 black dither pixels — not grey ink.
+        pal.fillStyle = blackShadeHex(j);
         pal.fillRect(ox, oy, cw, ch);
         continue;
       }
@@ -595,8 +577,7 @@ function drawPalette() {
   }
   pal.strokeStyle = '#fff';
   pal.lineWidth = 2;
-  const selPatCol = (palRow === 0) ? blackPatToCol(pat) : pat;
-  pal.strokeRect(selPatCol * cellW + 1, palRow * cellH + 1, cellW - 2, cellH - 2);
+  pal.strokeRect(pat * cellW + 1, palRow * cellH + 1, cellW - 2, cellH - 2);
 }
 
 function toLogical(clientX, clientY) {
@@ -633,22 +614,7 @@ function layoutCanvasCss() {
 }
 
 // --- pointer / finger paint ---
-function toolSnap() {
-  return { col, pcol, pat, palRow, dT: dT ? 1 : 0, dw };
-}
-
-function applyToolSnap(s) {
-  if (!s) return;
-  if (s.col !== undefined) col = s.col;
-  if (s.pcol !== undefined) pcol = s.pcol;
-  if (s.pat !== undefined) pat = s.pat;
-  if (s.palRow !== undefined) palRow = s.palRow;
-  if (s.dT !== undefined) dT = s.dT ? 1 : 0;
-  if (s.dw !== undefined) dw = s.dw;
-}
-
 function onDown(e) {
-  if (playingBack) return;
   e.preventDefault();
   const pt = e.touches ? e.touches[0] : e;
   const logical = toLogical(pt.clientX, pt.clientY);
@@ -657,7 +623,6 @@ function onDown(e) {
   if (fillMode) {
     saveUndo();
     floodFill(lx, ly);
-    strokeHistory.push(Object.assign({ t: 'fill', x: lx, y: ly }, toolSnap()));
     requestBlit();
     persistQuiet();
     setStatus(`Filled with pat ${pat} · ink ${col}`);
@@ -666,27 +631,19 @@ function onDown(e) {
   drawing = true;
   lx0 = lx; ly0 = ly;
   saveUndo();
-  currentStroke = Object.assign({ t: 'stroke', pts: [lx, ly] }, toolSnap());
   plotAt(lx, ly);
   requestBlit();
   try { canvas.setPointerCapture?.(e.pointerId); } catch (_) {}
 }
 
 function onMove(e) {
-  if (!drawing || fillMode || playingBack) return;
+  if (!drawing || fillMode) return;
   e.preventDefault();
   const pt = e.touches ? e.touches[0] : e;
   const logical = toLogical(pt.clientX, pt.clientY);
   if (!logical) return;
   const [lx, ly] = logical;
   strokeLine(lx0, ly0, lx, ly);
-  if (currentStroke) {
-    const pts = currentStroke.pts;
-    const n = pts.length;
-    if (n < 2 || pts[n - 2] !== lx || pts[n - 1] !== ly) {
-      pts.push(lx, ly);
-    }
-  }
   lx0 = lx; ly0 = ly;
   requestBlit();
 }
@@ -694,10 +651,6 @@ function onMove(e) {
 function onUp(e) {
   if (!drawing) return;
   drawing = false;
-  if (currentStroke) {
-    strokeHistory.push(currentStroke);
-    currentStroke = null;
-  }
   persistQuiet();
   try { canvas.releasePointerCapture?.(e.pointerId); } catch (_) {}
 }
@@ -721,9 +674,8 @@ function palettePick(clientX, clientY) {
   const scaleY = palCanvas.height / Math.max(1, r.height);
   const x = (clientX - r.left) * scaleX;
   const y = (clientY - r.top) * scaleY;
-  const pCol = Math.max(0, Math.min(17, (x / cellW) | 0));
+  const p = Math.max(0, Math.min(17, (x / cellW) | 0));
   const row = Math.max(0, Math.min(7, (y / cellH) | 0));
-  const p = (row === 0) ? blackColToPat(pCol) : pCol;
   pickPat(p, row);
 }
 
@@ -903,222 +855,6 @@ async function savePng() {
   setStatus('Saved ' + name, { ok: true, hold: 2200 });
 }
 
-function makeFinBasename() {
-  return makePaintFilename().replace(/\.png$/i, '');
-}
-
-function buildFinDoc(base) {
-  return {
-    v: 1,
-    type: 'art4eva-paint-fin',
-    name: base,
-    w: LW,
-    h: LH,
-    t: Date.now(),
-    actions: strokeHistory.slice(),
-    png: paintToPngDataUrl()
-  };
-}
-
-async function writeTextToPhone(name, text) {
-  const Filesystem = capPlugin('Filesystem');
-  if (!Filesystem) throw new Error('Filesystem plugin missing — reinstall the app');
-  try {
-    if (typeof Filesystem.requestPermissions === 'function') {
-      await Filesystem.requestPermissions();
-    }
-  } catch (_) {}
-  const dirs = ['DOCUMENTS', 'CACHE', 'DATA'];
-  const relPath = 'Paint/' + name;
-  for (const directory of dirs) {
-    try {
-      await Filesystem.writeFile({
-        path: relPath,
-        data: text,
-        directory,
-        encoding: 'utf8',
-        recursive: true
-      });
-      return { path: relPath, directory, name };
-    } catch (_) {}
-  }
-  throw new Error('Could not write JSON to phone storage');
-}
-
-function downloadText(name, text, mime) {
-  const blob = new Blob([text], { type: mime || 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.download = name;
-  a.href = url;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
-}
-
-function rememberFinDoc(doc) {
-  try {
-    // Keep actions for PLAY; drop huge png from localStorage if needed
-    const light = {
-      v: doc.v,
-      type: doc.type,
-      name: doc.name,
-      w: doc.w,
-      h: doc.h,
-      t: doc.t,
-      actions: doc.actions
-    };
-    localStorage.setItem(FIN_KEY, JSON.stringify(light));
-  } catch (_) {
-    try {
-      localStorage.setItem(FIN_KEY, JSON.stringify({
-        v: 1, type: doc.type, name: doc.name, actions: doc.actions
-      }));
-    } catch (__) {}
-  }
-}
-
-async function saveFin() {
-  if (playingBack) return;
-  if (currentStroke) {
-    strokeHistory.push(currentStroke);
-    currentStroke = null;
-  }
-  persistQuiet();
-  const base = makeFinBasename() + '_fin';
-  const doc = buildFinDoc(base);
-  const jsonName = base + '.paint.json';
-  const pngName = base + '.png';
-  const jsonText = JSON.stringify(doc);
-  rememberFinDoc(doc);
-
-  if (isNativeApp()) {
-    try {
-      await writePngToPhone(pngName, doc.png);
-      await writeTextToPhone(jsonName, jsonText);
-      flashBtn('btn-fin', 'FIN ✓', 900);
-      setStatus('FIN saved · ' + strokeHistory.length + ' actions · ' + jsonName, { ok: true, hold: 3500 });
-    } catch (err) {
-      flashBtn('btn-fin', 'FAIL', 1200);
-      setStatus('FIN failed: ' + (err?.message || err), { hold: 4000 });
-    }
-    return;
-  }
-
-  downloadText(jsonName, jsonText, 'application/json');
-  const a = document.createElement('a');
-  a.download = pngName;
-  a.href = doc.png;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  flashBtn('btn-fin', 'FIN ✓', 900);
-  setStatus('FIN saved · ' + strokeHistory.length + ' actions', { ok: true, hold: 3000 });
-}
-
-function waitMs(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function playFinDoc(doc) {
-  if (!doc || !Array.isArray(doc.actions)) {
-    setStatus('No playback data', { hold: 2500 });
-    return;
-  }
-  if (playingBack) return;
-  playingBack = true;
-  drawing = false;
-  currentStroke = null;
-  fillMode = false;
-  syncFillBtn();
-  const actions = doc.actions;
-  setStatus('PLAY · ' + actions.length + ' actions…');
-  paint.fill(0);
-  blit();
-  await waitMs(250);
-
-  for (let ai = 0; ai < actions.length; ai++) {
-    if (!playingBack) break;
-    const a = actions[ai];
-    if (a.t === 'cls') {
-      paint.fill(0);
-      blit();
-      await waitMs(180);
-      continue;
-    }
-    if (a.t === 'fill') {
-      applyToolSnap(a);
-      floodFill(a.x | 0, a.y | 0);
-      blit();
-      await waitMs(90);
-      continue;
-    }
-    if (a.t === 'stroke' && a.pts && a.pts.length >= 2) {
-      applyToolSnap(a);
-      const pts = a.pts;
-      let px = pts[0], py = pts[1];
-      plotAt(px, py);
-      for (let i = 2; i < pts.length; i += 2) {
-        if (!playingBack) break;
-        const x = pts[i], y = pts[i + 1];
-        strokeLine(px, py, x, y);
-        px = x; py = y;
-        if (((i >> 1) & 3) === 0) {
-          blit();
-          await waitMs(6);
-        }
-      }
-      blit();
-      await waitMs(20);
-    }
-  }
-
-  playingBack = false;
-  syncInkStrip();
-  syncTransBtn();
-  drawPalette();
-  document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x.dataset.size === dw));
-  setStatus('PLAY done · ' + actions.length + ' actions', { ok: true, hold: 3000 });
-}
-
-async function playFin() {
-  if (playingBack) {
-    playingBack = false;
-    setStatus('PLAY stopped');
-    return;
-  }
-  let doc = null;
-  try {
-    const raw = localStorage.getItem(FIN_KEY);
-    if (raw) doc = JSON.parse(raw);
-  } catch (_) {}
-  if (doc && Array.isArray(doc.actions) && doc.actions.length) {
-    await playFinDoc(doc);
-    return;
-  }
-  setStatus('Pick a .paint.json FIN file…');
-  fileFin.click();
-}
-
-function loadFinFile(file) {
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const doc = JSON.parse(String(reader.result || ''));
-      if (!doc || doc.type !== 'art4eva-paint-fin' || !Array.isArray(doc.actions)) {
-        setStatus('Not a FIN paint file', { hold: 3000 });
-        return;
-      }
-      rememberFinDoc(doc);
-      await playFinDoc(doc);
-    } catch (err) {
-      setStatus('FIN load failed: ' + (err?.message || err), { hold: 4000 });
-    }
-  };
-  reader.readAsText(file);
-}
-
 function uriToAbsolutePath(uri) {
   if (!uri) return null;
   let p = String(uri);
@@ -1180,11 +916,9 @@ async function emailPng() {
 }
 
 function clearScreen() {
-  if (playingBack) return;
   if (!confirm('Clear the whole picture?')) return;
   saveUndo();
   paint.fill(0);
-  strokeHistory.push({ t: 'cls' });
   requestBlit();
   persistQuiet();
   setStatus('Screen cleared', { ok: true, hold: 2000 });
@@ -1274,17 +1008,11 @@ function syncFillBtn() {
 }
 
 document.getElementById('btn-save').onclick = () => { savePng(); };
-document.getElementById('btn-fin').onclick = () => { saveFin(); };
-document.getElementById('btn-play').onclick = () => { playFin(); };
 document.getElementById('btn-load').onclick = () => fileLoad.click();
 document.getElementById('btn-email').onclick = () => { emailPng(); };
 fileLoad.onchange = () => {
   if (fileLoad.files?.[0]) loadPngFile(fileLoad.files[0]);
   fileLoad.value = '';
-};
-fileFin.onchange = () => {
-  if (fileFin.files?.[0]) loadFinFile(fileFin.files[0]);
-  fileFin.value = '';
 };
 document.getElementById('btn-autosave').onclick = () => setAutosave(!autosaveOn);
 document.getElementById('btn-undo').onclick = doUndo;

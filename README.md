@@ -16,7 +16,8 @@ Open http://localhost:5173 — or on a phone on the same Wi‑Fi, use your Mac�
 - **Top half:** Mode 2 canvas  
 - **Bottom half:** brushes → dither palette → ink → SAVE / LOAD / EMAIL / AUTO / TRANS / FILL / CLS / UNDO
 
-**Top palette row** = black density shades (solid greys on the swatch; paints black dither pixels — use with TRANS to darken).  
+**Top palette row** = black density shades (solid greys; **dense on the left → light on the right**; paints black dither pixels — use with TRANS to darken).  
+**FIN** saves the PNG plus a stroke-history `.paint.json`. **PLAY** replays the last FIN (or pick a `.paint.json`).  
 **SAVE** writes a timestamped PNG to `Documents/Paint` with no popups.  
 **EMAIL** saves a copy and opens a mail draft to `blippyxpixel@gmail.com` with the PNG attached.
 
