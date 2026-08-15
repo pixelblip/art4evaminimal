@@ -316,15 +316,14 @@ function patIdxTile(x, y) {
   return (x & 3) + ((y & 3) << 2);
 }
 
-/** Top palette row = black density shades (not grey ink — only black pixels). */
 function blackDitherActive() {
-  return palRow === 0 && pat > 0 && pat < 17;
+  return col === 0 && palRow === 0 && pat > 0 && pat < 17;
 }
 
 /** Plot colour at (x,y), or null to leave pixel unchanged (transparency). */
 function plotColAt(x, y) {
   const bit = PATTERNS[pat][patIdx(x, y)];
-  if (blackDitherActive()) return bit ? 0 : (dT ? null : 0);
+  if (blackDitherActive()) return bit ? 0 : (dT ? null : bbcInk(pcol));
   if (dT && pat > 0 && pat < 17 && !bit) return null;
   return bbcInk(bit ? col : pcol);
 }
@@ -481,17 +480,6 @@ function setStatus(msg, opts) {
 function pickPat(p, row) {
   pat = Math.max(0, Math.min(17, p));
   palRow = Math.max(0, Math.min(7, row));
-  if (palRow === 0) {
-    // Black-density row: paint black pixels only (shades via dither + TRANS)
-    col = 0;
-    pcol = 0;
-    document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === 0));
-    drawPalette();
-    setStatus(pat > 0 && pat < 17
-      ? (dT ? `Black shade ${pat} · transparent gaps (darken)` : `Black shade ${pat} · solid`)
-      : (pat === 17 ? 'Solid black' : 'Black row · empty pattern'));
-    return;
-  }
   pcol = STRIP[palRow];
   drawPalette();
   setStatus(dT && pat > 0 && pat < 17
@@ -528,11 +516,8 @@ function drawPalette() {
           const lx = ((tx * 8) / cw) | 0;
           const ly = ((ty * 8) / ch) | 0;
           const bit = PATTERNS[j][patIdxTile(lx & 3, ly & 3)];
-          if (i === 0) {
-            // Black row: greys on the swatch, but canvas paints black pixels only
-            if (j === 0) pal.fillStyle = '#E8E8E8';
-            else if (j === 17) pal.fillStyle = '#000000';
-            else pal.fillStyle = bit ? '#000000' : '#C8C8C8';
+          if (i === 0 && j > 0 && j < 17 && col === 0) {
+            pal.fillStyle = bit ? '#000000' : PALETTE[pcol & 7];
           } else {
             pal.fillStyle = PALETTE[bit ? col : sec];
           }
@@ -685,17 +670,9 @@ STRIP.forEach(ci => {
   b.style.background = PALETTE[ci];
   b.addEventListener('click', () => {
     col = ci;
-    if (ci === 0) {
-      palRow = 0;
-      pcol = 0;
-    } else if (palRow === 0) {
-      // Leave black-density row when choosing a colour ink
-      palRow = Math.max(0, STRIP.indexOf(ci));
-      pcol = STRIP[palRow];
-    }
     document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === col));
     drawPalette();
-    setStatus(ci === 0 ? 'Black shades · top palette row' : `Ink ${col}`);
+    setStatus(`Ink ${col}`);
   });
   inkBar.appendChild(b);
 });
