@@ -316,37 +316,6 @@ function patIdxTile(x, y) {
   return (x & 3) + ((y & 3) << 2);
 }
 
-/** How many on-bits in a 4×4 pattern (0–16). */
-function patternBitCount(j) {
-  const p = PATTERNS[j];
-  let n = 0;
-  for (let k = 0; k < 16; k++) n += p[k];
-  return n;
-}
-
-/** Greyscale swatch for black-density column j (light → black). Canvas still paints black pixels only. */
-function blackShadeHex(j) {
-  const t = patternBitCount(j) / 16;
-  const v = Math.round(220 * (1 - t));
-  const h = v.toString(16).padStart(2, '0');
-  return '#' + h + h + h;
-}
-
-function syncInkStrip() {
-  document.querySelectorAll('.ink').forEach((x, j) => {
-    const ci = STRIP[j];
-    x.classList.toggle('on', ci === col);
-    if (ci === 0) {
-      // Show selected black density as a solid grey, or a light→black ramp when not on black row
-      x.style.background = (palRow === 0)
-        ? blackShadeHex(pat)
-        : 'linear-gradient(90deg, #E0E0E0 0%, #808080 45%, #000000 100%)';
-    } else {
-      x.style.background = PALETTE[ci];
-    }
-  });
-}
-
 /** Top palette row = black density shades (not grey ink — only black pixels). */
 function blackDitherActive() {
   return palRow === 0 && pat > 0 && pat < 17;
@@ -516,7 +485,7 @@ function pickPat(p, row) {
     // Black-density row: paint black pixels only (shades via dither + TRANS)
     col = 0;
     pcol = 0;
-    syncInkStrip();
+    document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === 0));
     drawPalette();
     setStatus(pat > 0 && pat < 17
       ? (dT ? `Black shade ${pat} · transparent gaps (darken)` : `Black shade ${pat} · solid`)
@@ -524,7 +493,6 @@ function pickPat(p, row) {
     return;
   }
   pcol = STRIP[palRow];
-  syncInkStrip();
   drawPalette();
   setStatus(dT && pat > 0 && pat < 17
     ? `Dither ${pat} · transparent gaps`
@@ -554,22 +522,20 @@ function drawPalette() {
       // Last column/row absorbs remainder so the palette edge isn't a black bar
       const cw = (j === cols - 1) ? (pw - ox) : cellW;
       const ch = (i === rows - 1) ? (ph - oy) : cellH;
-
-      if (i === 0) {
-        // Black row: solid grey→black by density (same pattern index as colour rows).
-        // Canvas still paints Mode 2 black dither pixels — not grey ink.
-        pal.fillStyle = blackShadeHex(j);
-        pal.fillRect(ox, oy, cw, ch);
-        continue;
-      }
-
-      // Colour rows: same 4×4 dither brick scale as painting
+      // Fill every pixel in the cell (no gaps after dither blocks)
       for (let ty = 0; ty < ch; ty++) {
         for (let tx = 0; tx < cw; tx++) {
           const lx = ((tx * 8) / cw) | 0;
           const ly = ((ty * 8) / ch) | 0;
           const bit = PATTERNS[j][patIdxTile(lx & 3, ly & 3)];
-          pal.fillStyle = PALETTE[bit ? col : sec];
+          if (i === 0) {
+            // Black row: greys on the swatch, but canvas paints black pixels only
+            if (j === 0) pal.fillStyle = '#E8E8E8';
+            else if (j === 17) pal.fillStyle = '#000000';
+            else pal.fillStyle = bit ? '#000000' : '#C8C8C8';
+          } else {
+            pal.fillStyle = PALETTE[bit ? col : sec];
+          }
           pal.fillRect(ox + tx, oy + ty, 1, 1);
         }
       }
@@ -716,6 +682,7 @@ STRIP.forEach(ci => {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'ink' + (col === ci ? ' on' : '');
+  b.style.background = PALETTE[ci];
   b.addEventListener('click', () => {
     col = ci;
     if (ci === 0) {
@@ -726,13 +693,12 @@ STRIP.forEach(ci => {
       palRow = Math.max(0, STRIP.indexOf(ci));
       pcol = STRIP[palRow];
     }
-    syncInkStrip();
+    document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === col));
     drawPalette();
     setStatus(ci === 0 ? 'Black shades · top palette row' : `Ink ${col}`);
   });
   inkBar.appendChild(b);
 });
-syncInkStrip();
 
 // --- save / load / autosave / undo / trans ---
 function paintToPngDataUrl() {
@@ -1047,7 +1013,7 @@ if (halfEl && typeof ResizeObserver !== 'undefined') {
 // boot
 const restored = loadFromStorage();
 document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x.dataset.size === dw));
-syncInkStrip();
+document.querySelectorAll('.ink').forEach((x, j) => x.classList.toggle('on', STRIP[j] === col));
 syncTransBtn();
 syncFillBtn();
 setAutosave(autosaveOn);
