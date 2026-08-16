@@ -542,16 +542,12 @@ function pickPat(p, row) {
       : (pat === 17 ? 'Solid black' : 'Black row · empty pattern'));
     return;
   }
-  // Selecting a colour/dither cell arms that row's ink immediately (ready to paint)
-  col = STRIP[palRow];
   pcol = STRIP[palRow];
   syncInkStrip();
   drawPalette();
   setStatus(dT && pat > 0 && pat < 17
-    ? `Ink ${col} · dither ${pat} · ready`
-    : (pat === 17 || pat === 0
-      ? `Solid ink ${col} · ready`
-      : `Ink ${col} · pattern ${pat} · ready`));
+    ? `Dither ${pat} · transparent gaps`
+    : `Pattern ${pat} · paper ${pcol}`);
 }
 
 function drawPalette() {
@@ -585,13 +581,13 @@ function drawPalette() {
         continue;
       }
 
-      // Colour rows: show that row's own colour at this dither (on black)
+      // Colour rows: same 4×4 dither brick scale as painting
       for (let ty = 0; ty < ch; ty++) {
         for (let tx = 0; tx < cw; tx++) {
           const lx = ((tx * 8) / cw) | 0;
           const ly = ((ty * 8) / ch) | 0;
           const bit = PATTERNS[j][patIdxTile(lx & 3, ly & 3)];
-          pal.fillStyle = PALETTE[bit ? sec : 0];
+          pal.fillStyle = PALETTE[bit ? col : sec];
           pal.fillRect(ox + tx, oy + ty, 1, 1);
         }
       }
