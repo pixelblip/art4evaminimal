@@ -131,7 +131,7 @@
     display: flex;
     gap: 4px;
     flex-shrink: 0;
-    height: 54px;
+    height: 60px;
   }
   #action-file .file-ops {
     flex: 1 1 auto;
@@ -144,7 +144,7 @@
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 15px "Courier New", monospace;
+    font: bold 18px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     padding: 0 2px;
@@ -153,12 +153,13 @@
     letter-spacing: 0.02em;
   }
   #action-paint .act {
-    font-size: 16px;
+    font-size: 20px;
   }
   #btn-undo {
     flex: 0 0 auto;
-    min-width: 72px;
-    max-width: 96px;
+    min-width: 80px;
+    max-width: 110px;
+    font-size: 18px;
   }
   .act:active { background: #080; }
   .act.on {
@@ -948,7 +949,13 @@ BRUSH_SIZES.forEach(size => {
   b.addEventListener('click', () => {
     dw = size;
     document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x.dataset.size === dw));
-    setStatus(`Brush ${dw}`);
+    if (fillMode) {
+      fillMode = false;
+      syncFillBtn();
+      setStatus(`Brush ${dw} · FILL off`);
+    } else {
+      setStatus(`Brush ${dw}`);
+    }
   });
   brushRow.appendChild(b);
 });
