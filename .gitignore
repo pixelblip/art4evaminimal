@@ -11,3 +11,5 @@ android/captures/
 android/.cxx/
 *.iml
 .vscode/
+# Separate GitHub Pages repo (own git remote)
+pixelblip-gallery/

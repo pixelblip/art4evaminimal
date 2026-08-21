@@ -124,35 +124,41 @@
     touch-action: none;
     cursor: crosshair;
   }
-  #ink-bar {
-    flex-shrink: 0;
-    height: 28px;
+  #ink-bar { display: none; }
+  .ink { display: none; }
+  #action-paint,
+  #action-file {
     display: flex;
-    gap: 3px;
-  }
-  .ink {
-    flex: 1;
-    border: 2px solid #333;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .ink.on { border-color: #fff; }
-  #action-row {
-    display: flex;
-    gap: 2px;
+    gap: 4px;
     flex-shrink: 0;
-    height: 48px;
+    height: 54px;
+  }
+  #action-file .file-ops {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    gap: 4px;
   }
   .act {
     flex: 1;
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 7px "Courier New", monospace;
+    font: bold 15px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    padding: 0;
+    padding: 0 2px;
     min-width: 0;
+    line-height: 1.05;
+    letter-spacing: 0.02em;
+  }
+  #action-paint .act {
+    font-size: 16px;
+  }
+  #btn-undo {
+    flex: 0 0 auto;
+    min-width: 72px;
+    max-width: 96px;
   }
   .act:active { background: #080; }
   .act.on {
@@ -170,6 +176,11 @@
     border-color: #f0f;
     color: #f0f;
   }
+  .act.grf-on {
+    background: #420;
+    border-color: #fa0;
+    color: #fa0;
+  }
   .act.cls-btn {
     border-color: #f66;
     color: #f66;
@@ -182,8 +193,8 @@
   }
   #status {
     flex-shrink: 0;
-    min-height: 18px;
-    font-size: 10px;
+    min-height: 20px;
+    font-size: 12px;
     color: #0ff;
     white-space: nowrap;
     overflow: hidden;
@@ -191,6 +202,52 @@
   }
   #status.ok { color: #0f0; font-weight: bold; }
   #file-load { display: none; }
+  #token-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.82);
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #token-modal.show { display: flex; }
+  #token-modal .box {
+    width: min(420px, 100%);
+    background: #111;
+    border: 2px solid #0f0;
+    padding: 12px;
+    color: #0f0;
+    font: 12px "Courier New", monospace;
+  }
+  #token-modal h3 { margin: 0 0 8px; font-size: 14px; color: #fff; }
+  #token-modal p { margin: 0 0 8px; color: #8f8; line-height: 1.35; }
+  #token-modal textarea {
+    width: 100%;
+    height: 88px;
+    background: #000;
+    color: #0ff;
+    border: 1px solid #0f0;
+    font: 12px "Courier New", monospace;
+    padding: 6px;
+    resize: vertical;
+  }
+  #token-modal .row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  #token-modal .row button {
+    flex: 1;
+    border: 2px solid #0f0;
+    background: #040;
+    color: #0f0;
+    font: bold 13px "Courier New", monospace;
+    padding: 10px 0;
+    cursor: pointer;
+  }
+  #token-modal .row button.danger { border-color: #f66; color: #f66; background: #300; }
 </style>
 </head>
 <body>
@@ -203,17 +260,24 @@
   <div id="tools-half">
     <div id="brush-row"></div>
     <div id="palette-wrap"><canvas id="palette"></canvas></div>
-    <div id="ink-bar"></div>
-    <div id="action-row">
-      <button type="button" class="act" id="btn-save">SAVE</button>
-      <button type="button" class="act" id="btn-fin">FIN</button>
-      <button type="button" class="act" id="btn-play">PLAY</button>
-      <button type="button" class="act" id="btn-load">LOAD</button>
-      <button type="button" class="act" id="btn-email">EMAIL</button>
-      <button type="button" class="act" id="btn-autosave">AUTO</button>
+    <div id="action-paint">
       <button type="button" class="act" id="btn-trans">TRANS</button>
       <button type="button" class="act" id="btn-fill">FILL</button>
+      <button type="button" class="act" id="btn-grf">GRAF</button>
       <button type="button" class="act cls-btn" id="btn-cls">CLS</button>
+    </div>
+    <div id="action-file">
+      <div class="file-ops">
+        <button type="button" class="act" id="btn-save">SAVE</button>
+        <button type="button" class="act" id="btn-fin">FIN</button>
+        <button type="button" class="act" id="btn-pub">PUB</button>
+        <button type="button" class="act" id="btn-key">KEY</button>
+        <button type="button" class="act" id="btn-gal">GAL</button>
+        <button type="button" class="act" id="btn-play">PLAY</button>
+        <button type="button" class="act" id="btn-load">LOAD</button>
+        <button type="button" class="act" id="btn-email">EMAIL</button>
+        <button type="button" class="act" id="btn-autosave">AUTO</button>
+      </div>
       <button type="button" class="act" id="btn-undo">UNDO</button>
     </div>
     <div id="status">Paint · pick dither · finger draw</div>
@@ -221,6 +285,23 @@
 </div>
 <input type="file" id="file-load" accept="image/png,image/*">
 <input type="file" id="file-fin" accept=".json,.paint.json,application/json">
+
+<div id="token-modal" aria-hidden="true">
+  <div class="box">
+    <h3>One-time gallery setup</h3>
+    <p><b>1.</b> Tap <b>Create token</b> below (opens GitHub).<br>
+       <b>2.</b> Sign in → generate a token with access to <b>pixelblip-gallery</b> only → <b>Contents: Read and write</b>.<br>
+       <b>3.</b> Copy the token, paste it here, tap <b>Save</b>.<br>
+       <b>4.</b> Tap <b>PUB</b> to publish pictures.</p>
+    <p style="margin-bottom:8px"><a id="token-help-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener" style="color:#0ff">Create token on GitHub ↗</a></p>
+    <textarea id="token-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Paste token here (starts with github_pat_ or ghp_)"></textarea>
+    <div class="row">
+      <button type="button" id="token-save">Save</button>
+      <button type="button" id="token-clear" class="danger">Clear</button>
+      <button type="button" id="token-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -266,12 +347,17 @@ const STRIP = [0, 1, 2, 3, 4, 5, 6, 7];
 const BRUSH_SIZES = [1, 2, 3, 4, 6, 8, 11, 14];
 const STORE_KEY = 'paint-simple-v1';
 const FIN_KEY = 'paint-last-fin-v1';
+const GALLERY_TOKEN_KEY = 'pixelblip-gallery-token-v1';
+const GALLERY_OWNER = 'pixelblip';
+const GALLERY_REPO = 'pixelblip-gallery';
+const GALLERY_URL = 'https://pixelblip.github.io/pixelblip-gallery/';
 const AUTOSAVE_MS = 60 * 1000;
 
 let col = 1, pcol = 7, pat = 8, palRow = 7;
 let dT = 1; // transparency on by default (BBC dither gaps skip)
 let dw = 1; // smallest = one Mode 2 fat pixel (easiest to see 2:1)
 let fillMode = false;
+let graffitiMode = false; // GRF: spray-style drips while painting
 let drawing = false, lx0 = 0, ly0 = 0;
 let autosaveOn = true;
 let autosaveTimer = null;
@@ -279,6 +365,8 @@ let statusTimer = null;
 let playingBack = false;
 let strokeHistory = []; // recorded actions for SAVEFIN / PLAY
 let currentStroke = null;
+let drips = []; // active graffiti drips
+let dripRaf = 0;
 
 const paint = new Uint8Array(LW * LH);
 const undoSt = [];
@@ -340,7 +428,7 @@ function patternBitCount(j) {
   return n;
 }
 
-/** Greyscale swatch for black-density pattern p (light → black by density). */
+/** Greyscale preview helper (ink strip only). */
 function blackShadeHex(p) {
   const t = patternBitCount(p) / 16;
   const v = Math.round(220 * (1 - t));
@@ -349,68 +437,72 @@ function blackShadeHex(p) {
 }
 
 function syncInkStrip() {
-  document.querySelectorAll('.ink').forEach((x, j) => {
-    const ci = STRIP[j];
-    x.classList.toggle('on', ci === col);
-    if (ci === 0) {
-      // Dark→light ramp matches reversed black row (dense left, sparse right)
-      x.style.background = (palRow === 0)
-        ? blackShadeHex(pat)
-        : 'linear-gradient(90deg, #000000 0%, #808080 55%, #E0E0E0 100%)';
-    } else {
-      x.style.background = PALETTE[ci];
-    }
-  });
+  // Ink strip removed — solid colours come from palette edge cells (pat 0 / 17)
+}
+
+/** Solid palette cells: pattern 0 (empty→paper) or 17 (full ink). */
+function isSolidPat() {
+  return pat === 0 || pat === 17;
 }
 
 /** Top palette row = black density shades (not grey ink — only black pixels). */
-function blackDitherActive() {
-  return palRow === 0 && pat > 0 && pat < 17;
+function blackDitherActive(tool) {
+  const r = tool || { palRow, pat };
+  return r.palRow === 0 && r.pat > 0 && r.pat < 17;
 }
 
 /** Plot colour at (x,y), or null to leave pixel unchanged (transparency). */
-function plotColAt(x, y) {
-  const bit = PATTERNS[pat][patIdx(x, y)];
-  if (blackDitherActive()) return bit ? 0 : (dT ? null : 0);
-  if (dT && pat > 0 && pat < 17 && !bit) return null;
-  return bbcInk(bit ? col : pcol);
+function plotColAt(x, y, tool) {
+  const t = tool || { col, pcol, pat, palRow, dT };
+  const bit = PATTERNS[t.pat][patIdx(x, y)];
+  // Solid colour / solid black
+  if (t.pat === 17) return bbcInk(t.col);
+  if (t.pat === 0) return t.dT ? null : bbcInk(t.pcol);
+
+  if (blackDitherActive(t)) return bit ? 0 : (t.dT ? null : 0);
+
+  // Colour dither density: ink bits on transparent (or black paper if SOLID/TRANS off)
+  if (t.dT && !bit) return null;
+  return bit ? bbcInk(t.col) : (t.dT ? null : 0);
 }
 
-function canPlot(dc) {
+function canPlot(dc, tool) {
+  const t = tool || { col, dT };
   if (dc === null || dc === undefined) return false;
-  if (!dT) return true;
-  if (dc === 0 && col === 0) return true;
+  if (!t.dT) return true;
+  if (dc === 0 && (t.col === 0 || (tool ? tool.palRow === 0 : palRow === 0))) return true;
   return dc !== 0;
 }
 
-function setPxDraw(x, y) {
+function setPxDraw(x, y, tool) {
   if (x < 0 || x >= LW || y < 0 || y >= LH) return;
-  const dc = plotColAt(x, y);
-  if (dc === null || !canPlot(dc)) return;
+  const dc = plotColAt(x, y, tool);
+  if (dc === null || !canPlot(dc, tool)) return;
   paint[y * LW + x] = bbcInk(dc);
 }
 
-function plotAt(px, py) {
-  if (dw <= 1) {
-    setPxDraw(px, py);
+function plotAt(px, py, tool) {
+  const brush = (tool && tool.dw != null) ? tool.dw : dw;
+  if (brush <= 1) {
+    setPxDraw(px, py, tool);
     return;
   }
   const ax = px + 0.5;
   const ay = py + 0.5;
-  const dx = Math.floor(ax - dw / 2);
-  const dy = Math.floor(ay - dw);
-  for (let ly = dy; ly < dy + dw * 2; ly++) {
-    for (let lx = dx; lx < dx + dw; lx++) setPxDraw(lx, ly);
+  const dx = Math.floor(ax - brush / 2);
+  const dy = Math.floor(ay - brush);
+  for (let ly = dy; ly < dy + brush * 2; ly++) {
+    for (let lx = dx; lx < dx + brush; lx++) setPxDraw(lx, ly, tool);
   }
 }
 
-function strokeLine(x1, y1, x2, y2) {
+function strokeLine(x1, y1, x2, y2, tool) {
   x1 |= 0; y1 |= 0; x2 |= 0; y2 |= 0;
   let dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
   const sx = x1 < x2 ? 1 : -1, sy = y1 < y2 ? 1 : -1;
   let err = dx - dy;
   while (true) {
-    plotAt(x1, y1);
+    plotAt(x1, y1, tool);
     if (x1 === x2 && y1 === y2) break;
     const e2 = 2 * err;
     if (e2 > -dy) { err -= dy; x1 += sx; }
@@ -508,6 +600,7 @@ function doUndo() {
     setStatus('Nothing to undo');
     return;
   }
+  clearDrips();
   paint.set(undoSt.pop());
   if (currentStroke) currentStroke = null;
   else if (strokeHistory.length) strokeHistory.pop();
@@ -537,21 +630,21 @@ function pickPat(p, row) {
     pcol = 0;
     syncInkStrip();
     drawPalette();
-    setStatus(pat > 0 && pat < 17
-      ? (dT ? `Black shade ${pat} · transparent gaps (darken)` : `Black shade ${pat} · solid`)
-      : (pat === 17 ? 'Solid black' : 'Black row · empty pattern'));
+    setStatus(isSolidPat()
+      ? (pat === 17 ? 'Solid black · ready' : 'Black row · empty')
+      : (dT ? `Black dither ${pat} · ready` : `Black dither ${pat} · solid gaps`));
     return;
   }
-  // Selecting a colour/dither cell arms that row's ink immediately (ready to paint)
+  // Selecting a colour/dither cell arms that row's ink immediately
   col = STRIP[palRow];
-  pcol = STRIP[palRow];
+  pcol = 0; // dither against black / transparent — shows true density
   syncInkStrip();
   drawPalette();
-  setStatus(dT && pat > 0 && pat < 17
-    ? `Ink ${col} · dither ${pat} · ready`
-    : (pat === 17 || pat === 0
-      ? `Solid ink ${col} · ready`
-      : `Ink ${col} · pattern ${pat} · ready`));
+  if (isSolidPat()) {
+    setStatus(pat === 17 ? `Solid ${col} · ready` : `Empty / paper · ready`);
+  } else {
+    setStatus(`Dither ${pat} · ink ${col} · ready`);
+  }
 }
 
 function drawPalette() {
@@ -579,9 +672,17 @@ function drawPalette() {
       const ch = (i === rows - 1) ? (ph - oy) : cellH;
 
       if (i === 0) {
-        // Black row reversed: left densest (black), right least density (light grey)
-        pal.fillStyle = blackShadeHex(blackColToPat(j));
-        pal.fillRect(ox, oy, cw, ch);
+        // Black row: show real black dither on light grey (dense left → sparse right)
+        const bp = blackColToPat(j);
+        for (let ty = 0; ty < ch; ty++) {
+          for (let tx = 0; tx < cw; tx++) {
+            const lx = ((tx * 8) / cw) | 0;
+            const ly = ((ty * 8) / ch) | 0;
+            const bit = PATTERNS[bp][patIdxTile(lx & 3, ly & 3)];
+            pal.fillStyle = bit ? '#000000' : '#C8C8C8';
+            pal.fillRect(ox + tx, oy + ty, 1, 1);
+          }
+        }
         continue;
       }
 
@@ -638,7 +739,7 @@ function layoutCanvasCss() {
 
 // --- pointer / finger paint ---
 function toolSnap() {
-  return { col, pcol, pat, palRow, dT: dT ? 1 : 0, dw };
+  return { col, pcol, pat, palRow, dT: dT ? 1 : 0, dw, grf: graffitiMode ? 1 : 0 };
 }
 
 function applyToolSnap(s) {
@@ -649,6 +750,94 @@ function applyToolSnap(s) {
   if (s.palRow !== undefined) palRow = s.palRow;
   if (s.dT !== undefined) dT = s.dT ? 1 : 0;
   if (s.dw !== undefined) dw = s.dw;
+}
+
+let dripCoolUntil = 0;
+let lastDripAt = null;
+
+function clearDrips() {
+  drips.length = 0;
+  if (dripRaf) {
+    cancelAnimationFrame(dripRaf);
+    dripRaf = 0;
+  }
+  dripCoolUntil = 0;
+  lastDripAt = null;
+}
+
+function spawnDrip(lx, ly, tool) {
+  const snap = tool ? Object.assign({}, tool) : toolSnap();
+  const now = performance.now();
+  if (drips.length >= 8) return false;
+  if (dripCoolUntil && now < dripCoolUntil) return false;
+  if (lastDripAt && Math.hypot(lx - lastDripAt.x, ly - lastDripAt.y) < 6 && now - lastDripAt.t < 380) {
+    return false;
+  }
+  const brush = Math.max(1, snap.dw | 0);
+  drips.push({
+    x: lx + 0.5,
+    y: ly + 0.5,
+    tool: snap,
+    width: Math.max(1, brush * 0.5 + 0.35),
+    speed: 22 + Math.random() * 48,
+    life: 0,
+    maxLife: 0.65 + Math.random() * 1.25,
+    wobble: Math.random() * Math.PI * 2,
+    blob: Math.random() < 0.7
+  });
+  dripCoolUntil = now + 200 + Math.random() * 320;
+  lastDripAt = { x: lx, y: ly, t: now };
+  ensureDripTick();
+  return true;
+}
+
+function maybeSpawnDrip(lx, ly, tool) {
+  const grfOn = tool ? !!tool.grf : graffitiMode;
+  if (!grfOn) return;
+  const brush = Math.max(1, (tool && tool.dw != null) ? tool.dw : dw);
+  const chance = 0.07 + Math.min(0.28, brush * 0.022);
+  if (Math.random() < chance) spawnDrip(lx, ly, tool);
+}
+
+function ensureDripTick() {
+  if (dripRaf) return;
+  let last = performance.now();
+  const tick = (now) => {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    let dirty = false;
+    for (let i = drips.length - 1; i >= 0; i--) {
+      const d = drips[i];
+      const ox = d.x;
+      const oy = d.y;
+      d.life += dt;
+      d.speed += 20 * dt;
+      d.y += d.speed * dt;
+      d.x += Math.sin(d.life * 5.2 + d.wobble) * 0.32;
+      d.width *= 0.991;
+      const dripTool = Object.assign({}, d.tool, {
+        dw: Math.max(1, Math.round(d.width))
+      });
+      strokeLine(ox | 0, oy | 0, d.x | 0, d.y | 0, dripTool);
+      dirty = true;
+      if (d.life > d.maxLife || d.y >= LH || d.width < 0.45) {
+        if (d.blob && d.y < LH) {
+          plotAt(d.x | 0, (d.y + 1) | 0, Object.assign({}, d.tool, {
+            dw: Math.max(1, Math.round(d.width * 1.7))
+          }));
+        }
+        drips.splice(i, 1);
+      }
+    }
+    if (dirty) requestBlit();
+    if (drips.length) {
+      dripRaf = requestAnimationFrame(tick);
+    } else {
+      dripRaf = 0;
+      if (!drawing && !playingBack) persistQuiet();
+    }
+  };
+  dripRaf = requestAnimationFrame(tick);
 }
 
 function onDown(e) {
@@ -672,6 +861,7 @@ function onDown(e) {
   saveUndo();
   currentStroke = Object.assign({ t: 'stroke', pts: [lx, ly] }, toolSnap());
   plotAt(lx, ly);
+  maybeSpawnDrip(lx, ly);
   requestBlit();
   try { canvas.setPointerCapture?.(e.pointerId); } catch (_) {}
 }
@@ -684,6 +874,7 @@ function onMove(e) {
   if (!logical) return;
   const [lx, ly] = logical;
   strokeLine(lx0, ly0, lx, ly);
+  maybeSpawnDrip(lx, ly);
   if (currentStroke) {
     const pts = currentStroke.pts;
     const n = pts.length;
@@ -761,30 +952,6 @@ BRUSH_SIZES.forEach(size => {
   });
   brushRow.appendChild(b);
 });
-
-// --- UI: solid ink strip ---
-const inkBar = document.getElementById('ink-bar');
-STRIP.forEach(ci => {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'ink' + (col === ci ? ' on' : '');
-  b.addEventListener('click', () => {
-    col = ci;
-    if (ci === 0) {
-      palRow = 0;
-      pcol = 0;
-    } else if (palRow === 0) {
-      // Leave black-density row when choosing a colour ink
-      palRow = Math.max(0, STRIP.indexOf(ci));
-      pcol = STRIP[palRow];
-    }
-    syncInkStrip();
-    drawPalette();
-    setStatus(ci === 0 ? 'Black shades · top palette row' : `Ink ${col}`);
-  });
-  inkBar.appendChild(b);
-});
-syncInkStrip();
 
 // --- save / load / autosave / undo / trans ---
 function paintToPngDataUrl() {
@@ -983,6 +1150,273 @@ function rememberFinDoc(doc) {
   }
 }
 
+function getGalleryToken() {
+  try { return localStorage.getItem(GALLERY_TOKEN_KEY) || ''; } catch (_) { return ''; }
+}
+
+function setGalleryToken(token) {
+  try {
+    if (token) localStorage.setItem(GALLERY_TOKEN_KEY, token);
+    else localStorage.removeItem(GALLERY_TOKEN_KEY);
+  } catch (_) {}
+}
+
+function openGallery() {
+  try {
+    window.open(GALLERY_URL, '_blank', 'noopener');
+  } catch (_) {
+    location.href = GALLERY_URL;
+  }
+}
+
+function configureGalleryToken() {
+  const modal = document.getElementById('token-modal');
+  const input = document.getElementById('token-input');
+  if (!modal || !input) return;
+  input.value = getGalleryToken();
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden', 'false');
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeTokenModal() {
+  const modal = document.getElementById('token-modal');
+  if (!modal) return;
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+document.getElementById('token-cancel').onclick = () => closeTokenModal();
+document.getElementById('token-clear').onclick = () => {
+  setGalleryToken('');
+  document.getElementById('token-input').value = '';
+  closeTokenModal();
+  setStatus('Gallery token cleared', { hold: 2500 });
+};
+document.getElementById('token-save').onclick = async () => {
+  const trimmed = String(document.getElementById('token-input').value || '').trim();
+  setGalleryToken(trimmed);
+  closeTokenModal();
+  if (!trimmed) {
+    setStatus('Gallery token cleared', { hold: 2500 });
+    return;
+  }
+  setStatus('Checking gallery token…');
+  try {
+    await ghGalleryVerify();
+    setStatus('Gallery token OK — tap PUB to publish', { ok: true, hold: 3500 });
+  } catch (err) {
+    setStatus('Token saved but check failed: ' + (err?.message || err), { hold: 6000 });
+  }
+};
+
+function b64utf8(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+function galleryApiHeaders(jsonBody) {
+  const h = {
+    Accept: 'application/vnd.github+json',
+    Authorization: 'Bearer ' + getGalleryToken(),
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  if (jsonBody) h['Content-Type'] = 'application/json';
+  return h;
+}
+
+function explainGhError(status, text) {
+  if (status === 401) return 'HTTP 401 — token invalid or expired';
+  if (status === 403) return 'HTTP 403 — token needs Contents write on pixelblip/pixelblip-gallery';
+  if (status === 404) return 'HTTP 404 — repo or path not found (check token repo access)';
+  if (status === 409 || status === 422) return 'HTTP ' + status + ' — conflict updating file (retry PUB)';
+  return 'HTTP ' + status + (text ? ' ' + text.slice(0, 140) : '');
+}
+
+async function ghGalleryVerify() {
+  const token = getGalleryToken();
+  if (!token) throw new Error('No gallery token');
+  const res = await fetch(
+    'https://api.github.com/repos/' + GALLERY_OWNER + '/' + GALLERY_REPO,
+    { headers: galleryApiHeaders(false) }
+  );
+  if (!res.ok) throw new Error(explainGhError(res.status, await res.text()));
+  return res.json();
+}
+
+async function ghGalleryGet(path) {
+  const token = getGalleryToken();
+  if (!token) throw new Error('No gallery token — long-press PUB');
+  const res = await fetch(
+    'https://api.github.com/repos/' + GALLERY_OWNER + '/' + GALLERY_REPO + '/contents/' + path,
+    { headers: galleryApiHeaders(false) }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(explainGhError(res.status, await res.text()));
+  return res.json();
+}
+
+async function ghGalleryPut(path, contentB64, message, sha) {
+  const token = getGalleryToken();
+  if (!token) throw new Error('No gallery token — long-press PUB');
+  const body = { message, content: contentB64, branch: 'main' };
+  if (sha) body.sha = sha;
+  const res = await fetch(
+    'https://api.github.com/repos/' + GALLERY_OWNER + '/' + GALLERY_REPO + '/contents/' + path,
+    {
+      method: 'PUT',
+      headers: galleryApiHeaders(true),
+      body: JSON.stringify(body)
+    }
+  );
+  if (!res.ok) throw new Error(explainGhError(res.status, await res.text()));
+  return res.json();
+}
+
+async function ghGalleryPutCreateOrUpdate(path, contentB64, message) {
+  const existing = await ghGalleryGet(path);
+  return ghGalleryPut(path, contentB64, message, existing && existing.sha ? existing.sha : null);
+}
+
+function decodeGhFileContent(file) {
+  const raw = String(file.content || '').replace(/\n/g, '');
+  return decodeURIComponent(escape(atob(raw)));
+}
+
+/** Prefer Mac local publish API (uses `gh` login). Fall back to browser token. */
+async function publishViaLocalApi(doc) {
+  const id = (doc.name || ('piece_' + Date.now())).replace(/[^\w\-]+/g, '_');
+  const playDoc = {
+    v: doc.v || 1,
+    type: doc.type || 'art4eva-paint-fin',
+    name: doc.name,
+    w: doc.w || LW,
+    h: doc.h || LH,
+    t: doc.t || Date.now(),
+    actions: doc.actions || []
+  };
+  const res = await fetch('/api/publish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, png: doc.png, fin: playDoc })
+  });
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok || !data || !data.ok) {
+    const err = new Error((data && data.error) || ('Local publish HTTP ' + res.status));
+    err.localFail = true;
+    throw err;
+  }
+  return { id: data.id, url: data.url || GALLERY_URL, via: 'local' };
+}
+
+async function localPublishAvailable() {
+  try {
+    const res = await fetch('/api/publish-status', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!(data && data.ok);
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Publish PNG + play sequence to Pixelblip Gallery (GitHub Pages). */
+async function uploadFinToGallery(doc) {
+  // Path 1: local Mac server with gh (no browser token)
+  if (await localPublishAvailable()) {
+    return publishViaLocalApi(doc);
+  }
+
+  // Path 2: browser GitHub token
+  if (!getGalleryToken()) return { skipped: true };
+
+  await ghGalleryVerify();
+
+  const id = (doc.name || ('piece_' + Date.now())).replace(/[^\w\-]+/g, '_');
+  const imgPath = 'works/' + id + '.png';
+  const finPath = 'works/' + id + '.paint.json';
+  const pngB64 = String(doc.png || '').split(',')[1];
+  if (!pngB64) throw new Error('Missing PNG for gallery');
+
+  const playDoc = {
+    v: doc.v || 1,
+    type: doc.type || 'art4eva-paint-fin',
+    name: doc.name,
+    w: doc.w || LW,
+    h: doc.h || LH,
+    t: doc.t || Date.now(),
+    actions: doc.actions || []
+  };
+  const finB64 = b64utf8(JSON.stringify(playDoc));
+
+  setStatus('Uploading image…');
+  await ghGalleryPutCreateOrUpdate(imgPath, pngB64, 'Add ' + id + ' preview');
+  setStatus('Uploading play sequence…');
+  await ghGalleryPutCreateOrUpdate(finPath, finB64, 'Add ' + id + ' play sequence');
+
+  setStatus('Updating gallery list…');
+  const man = await ghGalleryGet('manifest.json');
+  if (!man) throw new Error('manifest.json missing in gallery repo');
+  const manifest = JSON.parse(decodeGhFileContent(man));
+  if (!Array.isArray(manifest.works)) manifest.works = [];
+  manifest.works = manifest.works.filter(w => w.id !== id);
+  manifest.works.unshift({
+    id,
+    title: doc.name || id,
+    created: doc.t || Date.now(),
+    image: imgPath,
+    fin: finPath,
+    trashed: false,
+    trashedAt: null
+  });
+  manifest.updated = Date.now();
+  await ghGalleryPut(
+    'manifest.json',
+    b64utf8(JSON.stringify(manifest, null, 2) + '\n'),
+    'List ' + id + ' in gallery',
+    man.sha
+  );
+  return { id, url: GALLERY_URL, via: 'token' };
+}
+
+/** Publish current canvas + stroke history to Pixelblip Gallery. */
+async function publishToGallery() {
+  if (playingBack) return;
+  const hasLocal = await localPublishAvailable();
+  if (!hasLocal && !getGalleryToken()) {
+    configureGalleryToken();
+    setStatus('Paste your GitHub token, tap Save, then tap PUB again — or use npm run serve on the Mac', { hold: 6000 });
+    return;
+  }
+  if (currentStroke) {
+    strokeHistory.push(currentStroke);
+    currentStroke = null;
+  }
+  persistQuiet();
+  const base = makeFinBasename() + '_fin';
+  const doc = buildFinDoc(base);
+  rememberFinDoc(doc);
+  try {
+    setStatus(hasLocal ? 'Publishing via Mac…' : 'Publishing to gallery…');
+    const up = await uploadFinToGallery(doc);
+    if (up.skipped) {
+      flashBtn('btn-pub', 'FAIL', 1200);
+      setStatus('Publish skipped — no token. Tap KEY to add one.', { hold: 5000 });
+      return;
+    }
+    flashBtn('btn-pub', 'PUB ✓', 1200);
+    setStatus('Published · ' + up.id + ' · wait ~30s then GAL', { ok: true, hold: 6000 });
+  } catch (err) {
+    flashBtn('btn-pub', 'FAIL', 1400);
+    const msg = String(err?.message || err);
+    setStatus('Publish failed: ' + msg, { hold: 8000 });
+    if (!hasLocal && /401|403|invalid|expired/i.test(msg)) {
+      setGalleryToken('');
+      configureGalleryToken();
+    }
+  }
+}
+
 async function saveFin() {
   if (playingBack) return;
   if (currentStroke) {
@@ -1035,6 +1469,7 @@ async function playFinDoc(doc) {
   drawing = false;
   currentStroke = null;
   fillMode = false;
+  clearDrips();
   syncFillBtn();
   const actions = doc.actions;
   setStatus('PLAY · ' + actions.length + ' actions…');
@@ -1060,13 +1495,16 @@ async function playFinDoc(doc) {
     }
     if (a.t === 'stroke' && a.pts && a.pts.length >= 2) {
       applyToolSnap(a);
+      const snap = Object.assign({}, a);
       const pts = a.pts;
       let px = pts[0], py = pts[1];
-      plotAt(px, py);
+      plotAt(px, py, snap);
+      if (snap.grf) maybeSpawnDrip(px, py, snap);
       for (let i = 2; i < pts.length; i += 2) {
         if (!playingBack) break;
         const x = pts[i], y = pts[i + 1];
-        strokeLine(px, py, x, y);
+        strokeLine(px, py, x, y, snap);
+        if (snap.grf) maybeSpawnDrip(x, y, snap);
         px = x; py = y;
         if (((i >> 1) & 3) === 0) {
           blit();
@@ -1074,10 +1512,19 @@ async function playFinDoc(doc) {
         }
       }
       blit();
-      await waitMs(20);
+      // Let graffiti drips settle before next action
+      if (snap.grf) {
+        let guard = 0;
+        while (drips.length && playingBack && guard++ < 90) await waitMs(30);
+      } else {
+        await waitMs(20);
+      }
     }
   }
 
+  let settle = 0;
+  while (drips.length && playingBack && settle++ < 120) await waitMs(30);
+  clearDrips();
   playingBack = false;
   syncInkStrip();
   syncTransBtn();
@@ -1089,6 +1536,7 @@ async function playFinDoc(doc) {
 async function playFin() {
   if (playingBack) {
     playingBack = false;
+    clearDrips();
     setStatus('PLAY stopped');
     return;
   }
@@ -1186,6 +1634,7 @@ async function emailPng() {
 function clearScreen() {
   if (playingBack) return;
   if (!confirm('Clear the whole picture?')) return;
+  clearDrips();
   saveUndo();
   paint.fill(0);
   strokeHistory.push({ t: 'cls' });
@@ -1277,9 +1726,58 @@ function syncFillBtn() {
   canvas.style.cursor = fillMode ? 'cell' : 'crosshair';
 }
 
+function syncGrfBtn() {
+  const btn = document.getElementById('btn-grf');
+  if (!btn) return;
+  btn.classList.toggle('grf-on', graffitiMode);
+}
+
 document.getElementById('btn-save').onclick = () => { savePng(); };
 document.getElementById('btn-fin').onclick = () => { saveFin(); };
+document.getElementById('btn-pub').onclick = () => { publishToGallery(); };
+document.getElementById('btn-key').onclick = () => {
+  configureGalleryToken();
+  setStatus('Paste GitHub token → Save → then PUB', { hold: 4000 });
+};
 document.getElementById('btn-play').onclick = () => { playFin(); };
+document.getElementById('btn-gal').onclick = () => { openGallery(); };
+function bindGalleryTokenLongPress(btn) {
+  if (!btn) return;
+  btn.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    configureGalleryToken();
+  });
+  let timer = null;
+  let opened = false;
+  const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const start = (e) => {
+    if (e && e.button != null && e.button !== 0) return;
+    clear();
+    opened = false;
+    timer = setTimeout(() => {
+      timer = null;
+      opened = true;
+      configureGalleryToken();
+    }, 550);
+  };
+  const end = (e) => {
+    clear();
+    // If long-press opened the modal, don't also fire click publish
+    if (opened && e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+  btn.addEventListener('pointerdown', start);
+  btn.addEventListener('pointerup', end);
+  btn.addEventListener('pointerleave', clear);
+  btn.addEventListener('pointercancel', clear);
+  btn.addEventListener('touchstart', start, { passive: true });
+  btn.addEventListener('touchend', end);
+  btn.addEventListener('touchcancel', clear);
+}
+bindGalleryTokenLongPress(document.getElementById('btn-gal'));
+bindGalleryTokenLongPress(document.getElementById('btn-pub'));
 document.getElementById('btn-load').onclick = () => fileLoad.click();
 document.getElementById('btn-email').onclick = () => { emailPng(); };
 fileLoad.onchange = () => {
@@ -1305,6 +1803,13 @@ document.getElementById('btn-fill').onclick = () => {
     ? 'FILL on — tap area to flood with current dither/solid'
     : 'FILL off — finger paint');
 };
+document.getElementById('btn-grf').onclick = () => {
+  graffitiMode = !graffitiMode;
+  syncGrfBtn();
+  setStatus(graffitiMode
+    ? 'GRAF on — spray drips (same dither/solid as brush)'
+    : 'GRAF off — clean strokes');
+};
 
 function onResize() {
   layoutCanvasCss();
@@ -1326,6 +1831,7 @@ document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x
 syncInkStrip();
 syncTransBtn();
 syncFillBtn();
+syncGrfBtn();
 setAutosave(autosaveOn);
 onResize();
 setTimeout(onResize, 50);
