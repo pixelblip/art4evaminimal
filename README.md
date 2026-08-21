@@ -16,8 +16,8 @@ Open http://localhost:5173 — or on a phone on the same Wi‑Fi, use your Mac�
 - **Top half:** Mode 2 canvas  
 - **Bottom half:** brushes → dither palette → paint tools → file tools  
 
-**Paint row:** TRANS / FILL / **GRAF** (drip mode) / CLS  
-**File row:** SAVE / FIN / PUB / … / **UNDO** (bottom-right)  
+**Paint row:** TRANS · FILL · GRAF · CLS · AUTO · PLAY · KEY  
+**File row:** SAVE · FIN · PUB · GAL · LOAD · EMAIL · UNDO (7 each, equal width) 
 Solid colours = leftmost/rightmost cells in each palette row (ink strip removed).  
 **Top palette row** = black density dither (real pattern preview; **dense left → light right**).  
 **Palette dither cell** → brush paints that dither. **Solid cell** → solid colour.  
