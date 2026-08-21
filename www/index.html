@@ -133,33 +133,18 @@
     flex-shrink: 0;
     height: 60px;
   }
-  #action-file .file-ops {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    gap: 4px;
-  }
   .act {
-    flex: 1;
+    flex: 1 1 0;
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 18px "Courier New", monospace;
+    font: bold 17px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    padding: 0 2px;
+    padding: 0 1px;
     min-width: 0;
     line-height: 1.05;
-    letter-spacing: 0.02em;
-  }
-  #action-paint .act {
-    font-size: 20px;
-  }
-  #btn-undo {
-    flex: 0 0 auto;
-    min-width: 80px;
-    max-width: 110px;
-    font-size: 18px;
+    letter-spacing: 0.01em;
   }
   .act:active { background: #080; }
   .act.on {
@@ -266,19 +251,17 @@
       <button type="button" class="act" id="btn-fill">FILL</button>
       <button type="button" class="act" id="btn-grf">GRAF</button>
       <button type="button" class="act cls-btn" id="btn-cls">CLS</button>
+      <button type="button" class="act" id="btn-autosave">AUTO</button>
+      <button type="button" class="act" id="btn-play">PLAY</button>
+      <button type="button" class="act" id="btn-key">KEY</button>
     </div>
     <div id="action-file">
-      <div class="file-ops">
-        <button type="button" class="act" id="btn-save">SAVE</button>
-        <button type="button" class="act" id="btn-fin">FIN</button>
-        <button type="button" class="act" id="btn-pub">PUB</button>
-        <button type="button" class="act" id="btn-key">KEY</button>
-        <button type="button" class="act" id="btn-gal">GAL</button>
-        <button type="button" class="act" id="btn-play">PLAY</button>
-        <button type="button" class="act" id="btn-load">LOAD</button>
-        <button type="button" class="act" id="btn-email">EMAIL</button>
-        <button type="button" class="act" id="btn-autosave">AUTO</button>
-      </div>
+      <button type="button" class="act" id="btn-save">SAVE</button>
+      <button type="button" class="act" id="btn-fin">FIN</button>
+      <button type="button" class="act" id="btn-pub">PUB</button>
+      <button type="button" class="act" id="btn-gal">GAL</button>
+      <button type="button" class="act" id="btn-load">LOAD</button>
+      <button type="button" class="act" id="btn-email">EMAIL</button>
       <button type="button" class="act" id="btn-undo">UNDO</button>
     </div>
     <div id="status">Paint · pick dither · finger draw</div>
