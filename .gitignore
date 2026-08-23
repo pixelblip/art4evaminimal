@@ -13,3 +13,7 @@ android/.cxx/
 .vscode/
 # Separate GitHub Pages repo (own git remote)
 pixelblip-gallery/
+# Local TLS certs (mkcert) — never commit
+certs/
+# Large local backups
+backups/*.tgz

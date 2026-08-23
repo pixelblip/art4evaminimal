@@ -6,12 +6,15 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', 'www');
+const CERT_DIR = path.join(__dirname, '..', 'certs');
 const PORT = Number(process.env.PORT || 5173);
+const HTTPS_PORT = Number(process.env.HTTPS_PORT || 5175);
 const OWNER = 'pixelblip';
 const REPO = 'pixelblip-gallery';
 
@@ -221,8 +224,32 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 405, { ok: false, error: 'Method not allowed' });
 });
 
+function lanIp() {
+  try {
+    return String(execFileSync('ipconfig', ['getifaddr', 'en0'], { encoding: 'utf8' })).trim();
+  } catch (_) {
+    return '192.168.x.x';
+  }
+}
+
 server.listen(PORT, '0.0.0.0', () => {
+  const ip = lanIp();
   console.log('Paint + gallery publish on http://localhost:' + PORT);
-  console.log('Phone (same Wi-Fi): http://<this-mac-ip>:' + PORT);
+  console.log('Phone (same Wi-Fi): http://' + ip + ':' + PORT);
   console.log('PUB uses Mac `gh` login → ' + OWNER + '/' + REPO);
 });
+
+try {
+  const key = fs.readFileSync(path.join(CERT_DIR, 'key.pem'));
+  const cert = fs.readFileSync(path.join(CERT_DIR, 'cert.pem'));
+  https.createServer({ key, cert }, (req, res) => {
+    // Reuse same handler by emitting to HTTP-style callback
+    server.emit('request', req, res);
+  }).listen(HTTPS_PORT, '0.0.0.0', () => {
+    const ip = lanIp();
+    console.log('HTTPS (self-signed/mkcert): https://localhost:' + HTTPS_PORT);
+    console.log('Phone HTTPS: https://' + ip + ':' + HTTPS_PORT);
+  });
+} catch (err) {
+  console.warn('HTTPS not started (add certs/cert.pem + certs/key.pem):', err.message || err);
+}

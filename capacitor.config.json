@@ -1,5 +1,13 @@
 {
   "appId": "com.paint.simple",
   "appName": "Paint",
-  "webDir": "www"
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }
