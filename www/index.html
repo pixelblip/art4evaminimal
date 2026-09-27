@@ -29,7 +29,7 @@
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   #canvas-half {
-    flex: 1 1 50%;
+    flex: 1 1 42%;
     min-height: 0;
     /* Grey bars = letterbox. Real Mode 2 picture is the white-boxed wide frame. */
     background: #555;
@@ -69,7 +69,7 @@
     background: #000;
   }
   #tools-half {
-    flex: 1 1 50%;
+    flex: 1 1 58%;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -82,7 +82,7 @@
     display: flex;
     gap: 2px;
     flex-shrink: 0;
-    height: 36px;
+    height: 30px;
   }
   .brush-btn {
     flex: 1;
@@ -112,7 +112,7 @@
   .brush-btn.on .dot { background: #ff0; }
   #palette-wrap {
     flex: 1 1 auto;
-    min-height: 48px;
+    min-height: 120px;
     border: 2px solid #fff;
     position: relative;
   }
@@ -127,7 +127,7 @@
   }
   #ink-bar {
     flex-shrink: 0;
-    height: 30px;
+    height: 28px;
     display: flex;
     gap: 3px;
   }
@@ -148,23 +148,23 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 10px;
-    padding-top: 8px;
+    margin-top: 8px;
+    padding-top: 6px;
     border-top: 2px solid #333;
   }
   #action-paint,
   #action-file {
     display: flex;
-    gap: 4px;
+    gap: 3px;
     flex-shrink: 0;
-    height: 52px;
+    height: 38px;
   }
   .act {
     flex: 1 1 0;
     border: 2px solid #0f0;
     background: #040;
     color: #0f0;
-    font: bold 15px "Courier New", monospace;
+    font: bold 12px "Courier New", monospace;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     padding: 0 1px;
@@ -179,9 +179,9 @@
     color: #ff0;
   }
   .act.trans-on {
-    background: #143;
-    border-color: #8f8;
-    color: #8f8;
+    background: #0ff;
+    border-color: #fff;
+    color: #000;
   }
   .act.fill-on {
     background: #204;
@@ -361,6 +361,7 @@ const STRIP = [0, 1, 2, 3, 4, 5, 6, 7];
 const BRUSH_SIZES = [1, 2, 3, 4, 6, 8, 11, 14];
 const STORE_KEY = 'paint-simple-v1';
 const FIN_KEY = 'paint-last-fin-v1';
+const HISTORY_KEY = 'paint-history-v1';
 const GALLERY_TOKEN_KEY = 'pixelblip-gallery-token-v1';
 const GALLERY_OWNER = 'pixelblip';
 const GALLERY_REPO = 'pixelblip-gallery';
@@ -1034,6 +1035,8 @@ function paintToPngDataUrl() {
 }
 
 function persistQuiet() {
+  // During PLAY / MP4 the canvas holds a half-replayed picture — never save that
+  if (playingBack) return;
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       paint: Array.from(paint),
@@ -1041,6 +1044,111 @@ function persistQuiet() {
       t: Date.now()
     }));
   } catch (_) {}
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(strokeHistory));
+  } catch (_) {
+    // History too big for storage: collapse to one snapshot so the picture is never lost
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify([{ t: 'snap', d: encodePaint(paint) }]));
+    } catch (__) {}
+  }
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const h = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(h)) strokeHistory = h;
+  } catch (_) {}
+  // Picture on screen but no history (older app / storage cleared): start from a snapshot
+  if (!strokeHistory.length && !canvasIsEmpty()) {
+    strokeHistory = [{ t: 'snap', d: encodePaint(paint) }];
+  }
+}
+
+/** Run-length encode the 160×256 picture: "<colour><count base36>." per run. */
+function encodePaint(p) {
+  let out = '';
+  let i = 0;
+  while (i < p.length) {
+    const v = p[i] & 7;
+    let n = 1;
+    while (i + n < p.length && (p[i + n] & 7) === v) n++;
+    out += v + n.toString(36) + '.';
+    i += n;
+  }
+  return out;
+}
+
+function decodePaintInto(s, dst) {
+  dst.fill(0);
+  let i = 0, k = 0;
+  const str = String(s || '');
+  while (k < str.length && i < dst.length) {
+    const v = (str.charCodeAt(k) - 48) & 7;
+    const dot = str.indexOf('.', k + 1);
+    if (dot < 0) break;
+    const n = parseInt(str.slice(k + 1, dot), 36) || 0;
+    dst.fill(v, i, Math.min(dst.length, i + n));
+    i += n;
+    k = dot + 1;
+  }
+}
+
+function flushCurrentStroke() {
+  if (currentStroke) {
+    strokeHistory.push(currentStroke);
+    currentStroke = null;
+  }
+}
+
+function applyActionSync(a) {
+  if (!a) return;
+  if (a.t === 'cls') { paint.fill(0); return; }
+  if (a.t === 'snap') { decodePaintInto(a.d, paint); return; }
+  if (a.t === 'fill') {
+    applyToolSnap(a);
+    floodFill(a.x | 0, a.y | 0);
+    return;
+  }
+  if (a.t === 'stroke' && a.pts && a.pts.length >= 2) {
+    const snap = Object.assign({}, a);
+    let px = a.pts[0], py = a.pts[1];
+    plotAt(px, py, snap);
+    for (let i = 2; i < a.pts.length; i += 2) {
+      strokeLine(px, py, a.pts[i], a.pts[i + 1], snap);
+      px = a.pts[i]; py = a.pts[i + 1];
+    }
+  }
+}
+
+/** Replay actions instantly (no drips) and return the result; canvas + tool are untouched. */
+function replayActionsSync(actions) {
+  const savedPaint = new Uint8Array(paint);
+  const savedTool = toolSnap();
+  paint.fill(0);
+  for (let i = 0; i < actions.length; i++) applyActionSync(actions[i]);
+  const out = new Uint8Array(paint);
+  paint.set(savedPaint);
+  applyToolSnap(savedTool);
+  return out;
+}
+
+/**
+ * Stroke history that is guaranteed to end on the real picture.
+ * GRAF drips are random and LOAD / lost history can't be replayed exactly,
+ * so a final snapshot is appended whenever the replay doesn't match.
+ */
+function completeActions() {
+  flushCurrentStroke();
+  const acts = strokeHistory.slice();
+  const replayed = replayActionsSync(acts);
+  let same = true;
+  for (let i = 0; i < paint.length; i++) {
+    if ((replayed[i] & 7) !== (paint[i] & 7)) { same = false; break; }
+  }
+  if (!same) acts.push({ t: 'snap', d: encodePaint(paint) });
+  return acts;
 }
 
 const EMAIL_TO = 'blippyxpixel@gmail.com';
@@ -1121,6 +1229,10 @@ async function writePngToPhone(name, dataUrl) {
 }
 
 async function savePng() {
+  if (playingBack) {
+    setStatus('Wait for MP4 / playback to finish', { hold: 2500 });
+    return;
+  }
   persistQuiet();
   const name = makePaintFilename();
   const dataUrl = paintToPngDataUrl();
@@ -1160,7 +1272,7 @@ function buildFinDoc(base) {
     w: LW,
     h: LH,
     t: Date.now(),
-    actions: strokeHistory.slice(),
+    actions: completeActions(),
     png: paintToPngDataUrl()
   };
 }
@@ -1635,14 +1747,20 @@ async function playFinDoc(doc, opts) {
     return false;
   }
   if (playingBack) return false;
-  playingBack = true;
   drawing = false;
-  currentStroke = null;
+  flushCurrentStroke();
+  persistQuiet();
+  // Playback draws over the live canvas; keep the real picture + tool to put back afterwards
+  const keepPaint = new Uint8Array(paint);
+  const keepTool = toolSnap();
+  const keepFill = fillMode;
+  playingBack = true;
   fillMode = false;
   clearDrips();
   syncFillBtn();
   const actions = doc.actions;
   if (!quiet) setStatus('PLAY · ' + actions.length + ' actions…');
+  try {
   paint.fill(0);
   blit();
   await waitMs(250);
@@ -1654,6 +1772,13 @@ async function playFinDoc(doc, opts) {
       paint.fill(0);
       blit();
       await waitMs(180);
+      continue;
+    }
+    if (a.t === 'snap') {
+      clearDrips();
+      decodePaintInto(a.d, paint);
+      blit();
+      await waitMs(120);
       continue;
     }
     if (a.t === 'fill') {
@@ -1703,8 +1828,16 @@ async function playFinDoc(doc, opts) {
       await waitMs(200);
     }
   }
+  } finally {
+    clearDrips();
+    paint.set(keepPaint);
+    applyToolSnap(keepTool);
+    fillMode = keepFill;
+    playingBack = false;
+    syncFillBtn();
+    blit();
+  }
 
-  playingBack = false;
   syncInkStrip();
   syncTransBtn();
   drawPalette();
@@ -1714,10 +1847,7 @@ async function playFinDoc(doc, opts) {
 }
 
 function buildFinDocFromHistory() {
-  if (currentStroke) {
-    strokeHistory.push(currentStroke);
-    currentStroke = null;
-  }
+  flushCurrentStroke();
   return buildFinDoc(makeFinBasename());
 }
 
@@ -1784,8 +1914,8 @@ async function shareOrDownloadBlob(blob, filename) {
 
 async function exportStrokeVideo() {
   if (playingBack) return;
-  if (!strokeHistory.length && !currentStroke) {
-    setStatus('Nothing to export — paint first (needs stroke history)', { hold: 4500 });
+  if (!strokeHistory.length && !currentStroke && canvasIsEmpty()) {
+    setStatus('Nothing to export — paint first', { hold: 4500 });
     return;
   }
   if (!canvas.captureStream || typeof MediaRecorder === 'undefined') {
@@ -1917,6 +2047,10 @@ function uriToAbsolutePath(uri) {
 }
 
 async function emailPng() {
+  if (playingBack) {
+    setStatus('Wait for MP4 / playback to finish', { hold: 2500 });
+    return;
+  }
   persistQuiet();
   const name = makePaintFilename();
   const dataUrl = paintToPngDataUrl();
@@ -2010,8 +2144,10 @@ function nearestBbc8(r, g, b) {
 }
 
 function loadPngFile(file) {
+  if (playingBack) return;
   const im = new Image();
   im.onload = () => {
+    flushCurrentStroke();
     saveUndo();
     const t = document.createElement('canvas');
     t.width = im.naturalWidth;
@@ -2027,6 +2163,7 @@ function loadPngFile(file) {
         paint[ly * LW + lx] = nearestBbc8(id.data[i], id.data[i + 1], id.data[i + 2]);
       }
     }
+    strokeHistory.push({ t: 'snap', d: encodePaint(paint) });
     requestBlit();
     persistQuiet();
     setStatus('Loaded image');
@@ -2136,6 +2273,7 @@ if (halfEl && typeof ResizeObserver !== 'undefined') {
 
 // boot
 const restored = loadFromStorage();
+loadHistory();
 document.querySelectorAll('.brush-btn').forEach(x => x.classList.toggle('on', +x.dataset.size === dw));
 syncInkStrip();
 syncTransBtn();
