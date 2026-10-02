@@ -143,6 +143,22 @@
     border-color: #ff0;
     box-shadow: inset 0 0 0 2px #000;
   }
+  #btn-erase {
+    flex: 1.3;
+    min-width: 0;
+    border: 2px solid #555;
+    padding: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    font: bold 10px "Courier New", monospace;
+    color: #000;
+    background:
+      repeating-conic-gradient(#888 0% 25%, #ddd 0% 50%) 0 0 / 8px 8px;
+  }
+  #btn-erase.on {
+    border-color: #ff0;
+    box-shadow: inset 0 0 0 2px #000;
+  }
   #actions {
     flex-shrink: 0;
     display: flex;
@@ -373,6 +389,7 @@ let dT = 1; // transparency on by default (BBC dither gaps skip)
 let dw = 1; // smallest = one Mode 2 fat pixel (easiest to see 2:1)
 let fillMode = false;
 let graffitiMode = false; // GRF: spray-style drips while painting
+let eraseMode = false; // ERASE swatch: brush / FILL wipe pixels back to blank
 let drawing = false, lx0 = 0, ly0 = 0;
 let autosaveOn = true;
 let autosaveTimer = null;
@@ -454,7 +471,7 @@ function blackShadeHex(p) {
 function syncInkStrip() {
   document.querySelectorAll('.ink').forEach((x, j) => {
     const ci = STRIP[j];
-    x.classList.toggle('on', ci === col);
+    x.classList.toggle('on', !eraseMode && ci === col);
     if (ci === 0) {
       x.style.background = (palRow === 0 && pat > 0 && pat < 17)
         ? blackShadeHex(pat)
@@ -463,6 +480,8 @@ function syncInkStrip() {
       x.style.background = PALETTE[ci];
     }
   });
+  const er = document.getElementById('btn-erase');
+  if (er) er.classList.toggle('on', eraseMode);
 }
 
 /** Solid palette cells: pattern 0 (empty→paper) or 17 (full ink). */
@@ -478,7 +497,8 @@ function blackDitherActive(tool) {
 
 /** Plot colour at (x,y), or null to leave pixel unchanged (transparency). */
 function plotColAt(x, y, tool) {
-  const t = tool || { col, pcol, pat, palRow, dT };
+  const t = tool || { col, pcol, pat, palRow, dT, er: eraseMode ? 1 : 0 };
+  if (t.er) return 0;
   const bit = PATTERNS[t.pat][patIdx(x, y)];
   // Solid colour / solid black
   if (t.pat === 17) return bbcInk(t.col);
@@ -492,8 +512,9 @@ function plotColAt(x, y, tool) {
 }
 
 function canPlot(dc, tool) {
-  const t = tool || { col, dT };
+  const t = tool || { col, dT, er: eraseMode ? 1 : 0 };
   if (dc === null || dc === undefined) return false;
+  if (t.er) return true;
   if (!t.dT) return true;
   if (dc === 0 && (t.col === 0 || (tool ? tool.palRow === 0 : palRow === 0))) return true;
   return dc !== 0;
@@ -545,7 +566,9 @@ function floodFill(sx, sy) {
   if (sx < 0 || sx >= LW || sy < 0 || sy >= LH) return;
   const si = sy * LW + sx;
   const target = paint[si];
-  if (!blackDitherActive()) {
+  if (eraseMode) {
+    if (target === 0) return;
+  } else if (!blackDitherActive()) {
     if (target === patternCol(sx, sy)) return;
   } else if (target === 0 && !PATTERNS[pat][patIdx(sx, sy)]) {
     return;
@@ -642,11 +665,13 @@ function setStatus(msg, opts) {
   if (statusTimer) clearTimeout(statusTimer);
   statusTimer = setTimeout(() => {
     statusEl.classList.remove('ok');
-    statusEl.textContent = `Ink ${col} · Pat ${pat} · Brush ${dw} · Trans ${dT ? 'ON' : 'OFF'}${autosaveOn ? ' · AUTO' : ''}`;
+    statusEl.textContent = (eraseMode ? 'ERASE' : `Ink ${col} · Pat ${pat}`)
+      + ` · Brush ${dw} · Trans ${dT ? 'ON' : 'OFF'}${autosaveOn ? ' · AUTO' : ''}`;
   }, hold);
 }
 
 function pickPat(p, row) {
+  eraseMode = false;
   pat = Math.max(0, Math.min(17, p));
   palRow = Math.max(0, Math.min(7, row));
   if (palRow === 0) {
@@ -728,6 +753,7 @@ function drawPalette() {
       }
     }
   }
+  if (eraseMode) return;
   // High-contrast selection box (visible on white / yellow / cyan)
   const selPatCol = (palRow === 0) ? blackPatToCol(pat) : pat;
   const sx = selPatCol * cellW;
@@ -777,7 +803,7 @@ function layoutCanvasCss() {
 
 // --- pointer / finger paint ---
 function toolSnap() {
-  return { col, pcol, pat, palRow, dT: dT ? 1 : 0, dw, grf: graffitiMode ? 1 : 0 };
+  return { col, pcol, pat, palRow, dT: dT ? 1 : 0, dw, grf: graffitiMode ? 1 : 0, er: eraseMode ? 1 : 0 };
 }
 
 function applyToolSnap(s) {
@@ -788,6 +814,8 @@ function applyToolSnap(s) {
   if (s.palRow !== undefined) palRow = s.palRow;
   if (s.dT !== undefined) dT = s.dT ? 1 : 0;
   if (s.dw !== undefined) dw = s.dw;
+  // Older strokes have no er field — they were never erasing
+  eraseMode = !!s.er;
 }
 
 let dripCoolUntil = 0;
@@ -1005,6 +1033,7 @@ STRIP.forEach(ci => {
   b.className = 'ink' + (col === ci ? ' on' : '');
   b.title = 'Solid ' + ci;
   b.addEventListener('click', () => {
+    eraseMode = false;
     col = ci;
     if (ci === 0) {
       palRow = 0;
@@ -1026,6 +1055,22 @@ STRIP.forEach(ci => {
   });
   inkBar.appendChild(b);
 });
+{
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.id = 'btn-erase';
+  b.title = 'Erase';
+  b.textContent = 'ERASE';
+  b.addEventListener('click', () => {
+    eraseMode = !eraseMode;
+    syncInkStrip();
+    drawPalette();
+    setStatus(eraseMode
+      ? (fillMode ? 'ERASE + FILL — tap an area to wipe it' : 'ERASE — paint to wipe back to blank')
+      : 'Erase off — painting with ink ' + col);
+  });
+  inkBar.appendChild(b);
+}
 syncInkStrip();
 
 // --- save / load / autosave / undo / trans ---
